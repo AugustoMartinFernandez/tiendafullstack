@@ -8,13 +8,34 @@ import { Eye, ShoppingBag, Check, ChevronLeft, ChevronRight, Heart } from "lucid
 import { useCart } from "@/context/cart-context";
 import { useFavorites } from "@/context/favorites-context";
 import { formatPrice } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, getProductImages } from "@/lib/utils";
 
 interface ProductCardProps {
   product: Product;
+  highlight?: string;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+// Componente auxiliar para efecto de carga
+function ProductCardImage({ src, alt, priority }: { src: string; alt: string; priority: boolean }) {
+  const [isLoading, setIsLoading] = useState(true);
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      fill
+      className={cn(
+        "object-cover transition-all duration-500 ease-in-out",
+        isLoading ? "scale-110 blur-sm grayscale" : "scale-100 blur-0 grayscale-0"
+      )}
+      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+      priority={priority}
+      onLoad={() => setIsLoading(false)}
+    />
+  );
+}
+
+export function ProductCard({ product, highlight }: ProductCardProps) {
   const { addToCart } = useCart();
   const { isFavorite, toggleFavorite } = useFavorites();
   const [isAdded, setIsAdded] = useState(false);
@@ -29,8 +50,8 @@ export function ProductCard({ product }: ProductCardProps) {
     ? Math.round(((product.originalPrice! - product.price) / product.originalPrice!) * 100)
     : 0;
 
-  // Normalizamos imágenes para el slider
-  const images = product.images && product.images.length > 0 ? product.images : (product.imageUrl ? [product.imageUrl] : ["/placeholder.png"]);
+  // Usamos el helper unificado
+  const images = getProductImages(product);
   const hasMultipleImages = images.length > 1;
 
   const handleAddToCart = (e: React.MouseEvent) => {
@@ -74,6 +95,20 @@ export function ProductCard({ product }: ProductCardProps) {
   const stockPercentage = Math.min((product.stock / 20) * 100, 100);
   const stockColor = product.stock > 5 ? "bg-green-500" : "bg-red-500";
 
+  // Helper para resaltar texto coincidente
+  const renderHighlightedName = () => {
+    if (!highlight || !highlight.trim()) return product.name;
+
+    // Escapamos caracteres especiales de regex para evitar errores
+    const escaped = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, "gi");
+    const parts = product.name.split(regex);
+
+    return parts.map((part, i) => 
+      regex.test(part) ? <mark key={i} className="bg-yellow-200 text-gray-900 rounded-sm px-0.5 no-underline">{part}</mark> : <span key={i}>{part}</span>
+    );
+  };
+
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
       
@@ -91,13 +126,10 @@ export function ProductCard({ product }: ProductCardProps) {
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {images.map((img, idx) => (
-            <div key={idx} className="relative h-full w-full flex-shrink-0 snap-center">
-              <Image
+            <div key={idx} className="relative h-full w-full shrink-0 snap-center">
+              <ProductCardImage
                 src={img}
                 alt={`${product.name} - Vista ${idx + 1}`}
-                fill
-                className="object-cover"
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                 priority={idx === 0} // Prioridad solo a la primera
               />
             </div>
@@ -114,14 +146,11 @@ export function ProductCard({ product }: ProductCardProps) {
               <ChevronRight className="h-4 w-4" />
             </button>
             
-            {/* Indicadores (Puntos) */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
-              {images.map((_, idx) => (
-                <div 
-                  key={idx} 
-                  className={cn("h-1.5 rounded-full transition-all shadow-sm", currentImageIndex === idx ? "w-4 bg-white" : "w-1.5 bg-white/50")} 
-                />
-              ))}
+            {/* Indicador de Cantidad (Badge) */}
+            <div className="absolute bottom-3 left-3 z-10">
+               <span className="px-2.5 py-1 rounded-full bg-black/40 text-[10px] font-bold text-white backdrop-blur-md border border-white/10">
+                 {currentImageIndex + 1} / {images.length}
+               </span>
             </div>
           </>
         )}
@@ -140,25 +169,27 @@ export function ProductCard({ product }: ProductCardProps) {
           )}
         </div>
 
-        {/* Overlay de Acciones (Desktop) */}
-        <div className="absolute inset-0 z-20 flex items-center justify-center gap-3 bg-black/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+        {/* Botón Favorito (Top Right) */}
+        <div className="absolute right-3 top-3 z-20">
           <button 
             onClick={handleToggleFavorite}
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-110",
-              isFav ? "bg-red-500 text-white" : "bg-white text-gray-900 hover:text-red-500"
+              "flex h-9 w-9 items-center justify-center rounded-full shadow-md transition-all hover:scale-110 active:scale-95",
+              isFav ? "bg-red-50 text-red-500" : "bg-white/90 text-gray-400 hover:text-red-500 backdrop-blur-sm"
             )}
             title={isFav ? "Quitar de favoritos" : "Agregar a favoritos"}
           >
             <Heart className={cn("h-5 w-5", isFav && "fill-current")} />
           </button>
-          
-          {/* BOTÓN AGREGAR (Desktop) */}
+        </div>
+
+        {/* Botón Carrito (Desktop - Bottom Right) */}
+        <div className="absolute right-3 bottom-3 z-20 hidden sm:block translate-y-4 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
           <button 
             onClick={handleAddToCart}
             disabled={isAdded || product.stock === 0}
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-110",
+              "flex h-11 w-11 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95",
               isAdded ? "bg-green-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700",
               product.stock === 0 && "bg-gray-400 cursor-not-allowed"
             )}
@@ -183,9 +214,20 @@ export function ProductCard({ product }: ProductCardProps) {
           )}
         </div>
 
+        {/* Tags (Nuevo) */}
+        {product.tags && product.tags.length > 0 && (
+           <div className="mb-2 flex flex-wrap gap-1">
+             {product.tags.slice(0, 3).map(tag => (
+               <span key={tag} className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-gray-50 text-[10px] font-bold text-gray-500 border border-gray-100">
+                 #{tag}
+               </span>
+             ))}
+           </div>
+        )}
+
         {/* Título (Truncado a 2 líneas) */}
         <h3 className="mb-2 text-sm font-bold text-gray-900 line-clamp-2 sm:text-base min-h-[2.5em]">
-          {product.name}
+          {renderHighlightedName()}
         </h3>
 
         {/* SKU */}

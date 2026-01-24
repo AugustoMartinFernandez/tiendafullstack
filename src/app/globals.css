@@ -63,3 +63,50 @@
     color: hsl(var(--foreground));
   }
 }
+
+/* --- ANIMACIÓN DE DESLIZAMIENTO (SLIDE) --- */
+
+/* 1. Definimos el movimiento de entrada (Nueva página) */
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* 2. Definimos el movimiento de salida (Página vieja) */
+@keyframes slide-out-to-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-30%); /* Se mueve solo un poco para efecto parallax */
+    opacity: 0;
+    filter: brightness(0.5); /* Se oscurece ligeramente */
+  }
+}
+
+/* 3. Aplicamos las animaciones a los pseudo-elementos de la API */
+
+/* La página que se va */
+::view-transition-old(root) {
+  animation: 500ms cubic-bezier(0.4, 0, 0.2, 1) both slide-out-to-left;
+}
+
+/* La página que llega */
+::view-transition-new(root) {
+  animation: 500ms cubic-bezier(0.4, 0, 0.2, 1) both slide-in-from-right;
+  /* Agregamos sombra para que se sienta que está "por encima" */
+  box-shadow: -20px 0 50px rgba(0, 0, 0, 0.2); 
+  z-index: 9999;
+}
+
+/* Opcional: Si el usuario prefiere reducir el movimiento, desactivamos la animación */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}

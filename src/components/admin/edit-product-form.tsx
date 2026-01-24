@@ -1,6 +1,6 @@
 "use client";
 
-import { updateProduct } from "@/lib/actions";
+import { updateProduct, getCategories, getTags } from "@/lib/actions";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Product } from "@/lib/types";
@@ -12,6 +12,7 @@ import { Toast, ToastType } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import Cropper, { Area } from "react-easy-crop";
+import { PRODUCT_CATEGORIES } from "@/lib/constants";
 
 interface Props {
   product: Product;
@@ -171,8 +172,13 @@ export function EditProductForm({ product }: Props) {
   const [description, setDescription] = useState(product.description || "");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([...PRODUCT_CATEGORIES]);
   const [category, setCategory] = useState(product.category);
+  const [isCustomCategory, setIsCustomCategory] = useState(false); // Se recalcula en useEffect
   const [subCategory, setSubCategory] = useState(product.subCategory || "");
+  const [tags, setTags] = useState<string[]>(product.tags || []);
+  const [tagInput, setTagInput] = useState("");
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   
   // Estado para el Crop
   const [cropImage, setCropImage] = useState<string | null>(null);
@@ -183,7 +189,23 @@ export function EditProductForm({ product }: Props) {
   const [watermarkText, setWatermarkText] = useState("Doña Jovita");
   const [watermarkColor, setWatermarkColor] = useState("rgba(255, 255, 255, 0.6)");
   const [sku, setSku] = useState(product.sku || "");
+  const [originalPrice, setOriginalPrice] = useState(product.originalPrice?.toString() || "");
+  const [showDiscount, setShowDiscount] = useState(!!product.originalPrice && product.originalPrice > 0);
   
+  // Cargar categorías y determinar si la actual es custom
+  useEffect(() => {
+    getCategories().then((cats) => {
+      setAvailableCategories(cats);
+      // Si la categoría del producto NO está en la lista cargada, es custom (o antigua)
+      setIsCustomCategory(!cats.includes(product.category));
+    });
+  }, [product.category]);
+
+  // Cargar tags disponibles
+  useEffect(() => {
+    getTags().then(setAvailableTags);
+  }, []);
+
   // --- PERSISTENCIA DE CONFIGURACIÓN (LocalStorage) ---
   useEffect(() => {
     const savedEnabled = localStorage.getItem("watermark_enabled");
@@ -203,6 +225,30 @@ export function EditProductForm({ product }: Props) {
   // Inicializamos el precio formateado (ej: "1.500")
   const [price, setPrice] = useState<string>(new Intl.NumberFormat("es-AR").format(product.price));
   
+  // Cálculo de descuento en tiempo real
+  const discountPercentage = (() => {
+    const p = parseFloat(price.replace(/\./g, "")); // Quitamos puntos de mil
+    const op = parseFloat(originalPrice);
+    if (!p || !op || op <= p) return 0;
+    return Math.round(((op - p) / op) * 100);
+  })();
+
+  // Helper para aplicar descuentos rápidos
+  const applyDiscount = (percentage: number) => {
+    let basePrice = parseFloat(originalPrice);
+    
+    // Si no hay precio de lista, usamos el precio de venta actual como base
+    if (!basePrice || isNaN(basePrice)) {
+      basePrice = parseFloat(price.replace(/\./g, "")); // Limpiar formato
+      if (!basePrice || isNaN(basePrice)) return;
+      setOriginalPrice(basePrice.toString());
+    }
+
+    const discountFactor = 1 - (percentage / 100);
+    const newPrice = Math.round(basePrice * discountFactor);
+    setPrice(new Intl.NumberFormat("es-AR").format(newPrice)); // Re-formatear
+  };
+
   // Estado para notificaciones
   const [toast, setToast] = useState<{ show: boolean; msg: string; type: ToastType }>({ show: false, msg: "", type: "success" });
   
@@ -215,18 +261,38 @@ export function EditProductForm({ product }: Props) {
   });
 
   // 2. SINCRONIZACIÓN DE ATRIBUTOS
-  const [attributes, setAttributes] = useState(
+  const [attributes, setAttributes] = useState<{ id: number; key: string; value: string }[]>(
     product.attributes 
       ? Object.entries(product.attributes).map(([key, value], index) => ({ 
-          id: index, 
-          name: key, 
+          id: Date.now() + index, 
+          key: key, 
           value: value 
         }))
       : []
   );
 
-  const addAttribute = () => setAttributes([...attributes, { id: Date.now(), name: "", value: "" }]);
+  const addAttribute = () => setAttributes([...attributes, { id: Date.now(), key: "", value: "" }]);
   const removeAttribute = (id: number) => setAttributes(attributes.filter((a) => a.id !== id));
+  const updateAttribute = (id: number, field: 'key' | 'value', newValue: string) => {
+    setAttributes(prev => prev.map(attr => 
+      attr.id === id ? { ...attr, [field]: newValue } : attr
+    ));
+  };
+
+  // --- GESTIÓN DE TAGS ---
+  const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = tagInput.trim();
+      if (val && !tags.includes(val)) {
+        setTags([...tags, val]);
+      }
+      setTagInput("");
+    }
+  };
+  const removeTag = (tagToRemove: string) => {
+    setTags(tags.filter(t => t !== tagToRemove));
+  };
 
   const showToast = (msg: string, type: ToastType) => {
     setToast({ show: true, msg, type });
@@ -383,20 +449,48 @@ export function EditProductForm({ product }: Props) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    // Validación de Categoría Custom
+    if (isCustomCategory) {
+      const cleanCategory = category.trim();
+      if (!cleanCategory) {
+        return showToast("El nombre de la categoría no puede estar vacío.", "error");
+      }
+      if (availableCategories.some((c) => c.toLowerCase() === cleanCategory.toLowerCase())) {
+        return showToast(`La categoría "${cleanCategory}" ya existe. Por favor seleccionala de la lista.`, "error");
+      }
+    }
+
+    // Validación de atributos duplicados
+    const attributeKeys = attributes
+      .map((attr) => attr.key.trim().toLowerCase())
+      .filter((key) => key !== "");
+    
+    if (new Set(attributeKeys).size !== attributeKeys.length) {
+      return showToast("Hay atributos con nombres duplicados. Por favor, corregilos.", "error");
+    }
+
     if (images.length === 0) return showToast("El producto debe tener al menos una imagen.", "error");
     
     // Obtenemos el valor numérico limpio (sin puntos) para validación y envío
     const rawPrice = Number(price.replace(/\./g, ""));
     if (rawPrice < 0) return showToast("El precio no puede ser negativo.", "error");
     
-    setLoading(true);
     const formData = new FormData(e.currentTarget);
+    const originalPriceVal = Number(formData.get("originalPrice"));
+
+    if (originalPriceVal > 0 && originalPriceVal <= rawPrice) {
+      return showToast("El precio original debe ser mayor al precio de venta.", "error");
+    }
+
+    setLoading(true);
     
     // Inyectamos el ID y la Galería al FormData
     formData.set("id", product.id);
     formData.set("price", rawPrice.toString()); // Sobrescribimos con el número limpio
     formData.delete("images"); // Limpiamos por seguridad
     images.forEach(url => formData.append("images", url));
+    tags.forEach(tag => formData.append("tags", tag));
 
     try {
       const result = await updateProduct(formData);
@@ -471,10 +565,46 @@ export function EditProductForm({ product }: Props) {
               )} 
             />
           </div>
-          <div>
-            <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Precio de Lista (Tachado)</label>
-            <input type="number" name="originalPrice" defaultValue={product.originalPrice || ""} className="w-full h-14 px-5 rounded-2xl border border-gray-100 bg-gray-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800" />
+
+          {/* TOGGLE DE OFERTA */}
+          <div className="flex items-center gap-3">
+            <input 
+              id="show-discount"
+              type="checkbox"
+              checked={showDiscount}
+              onChange={(e) => setShowDiscount(e.target.checked)}
+              className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+            />
+            <label htmlFor="show-discount" className="text-sm font-bold text-gray-700 cursor-pointer select-none">
+              ¿Agregar oferta / precio de lista?
+            </label>
           </div>
+
+          {showDiscount && (
+            <div className="animate-in fade-in slide-in-from-top-2">
+              <div className="flex justify-between mb-3">
+                <label className="block text-xs font-black uppercase text-gray-400 tracking-widest">Precio de Lista (Tachado)</label>
+                {discountPercentage > 0 && (
+                  <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-lg animate-in fade-in">-{discountPercentage}% OFF</span>
+                )}
+              </div>
+              <input type="number" name="originalPrice" value={originalPrice} onChange={(e) => setOriginalPrice(e.target.value)} className="w-full h-14 px-5 rounded-2xl border border-gray-100 bg-gray-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800" />
+              
+              {/* BOTONES DE DESCUENTO RÁPIDO */}
+              <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                {[10, 15, 20, 25, 30, 40, 50].map((pct) => (
+                  <button
+                  key={pct}
+                  type="button"
+                  onClick={() => applyDiscount(pct)}
+                  className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 hover:border-indigo-200 transition-all whitespace-nowrap active:scale-95"
+                >
+                  -{pct}%
+                </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* DESCRIPCIÓN */}
@@ -506,25 +636,48 @@ export function EditProductForm({ product }: Props) {
         <div className="space-y-8">
           <div>
             <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Categoría del Sistema</label>
-            <select 
-              name="category" 
-              value={category} 
-              onChange={(e) => {
-                setCategory(e.target.value);
-                setSubCategory(""); // Resetear subcategoría al cambiar categoría
-              }}
-              className="w-full h-14 px-5 rounded-2xl border border-gray-100 bg-gray-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800 cursor-pointer"
-            >
-               {["Ropa", "Calzado", "Tecnología", "Herramientas", "Accesorios", "Comida", "Otros"].map(c => (
-                 <option key={c} value={c}>{c}</option>
-               ))}
-            </select>
+            <div className="space-y-3">
+              <select 
+                name={!isCustomCategory ? "category" : undefined}
+                value={isCustomCategory ? "other" : category} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "other") {
+                    setIsCustomCategory(true);
+                    setCategory("");
+                  } else {
+                    setIsCustomCategory(false);
+                    setCategory(val);
+                    setSubCategory(""); 
+                  }
+                }}
+                className="w-full h-14 px-5 rounded-2xl border border-gray-100 bg-gray-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800 cursor-pointer"
+              >
+                {availableCategories.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+                <option value="other" className="font-bold text-indigo-600">+ Otra (Escribir nueva...)</option>
+              </select>
+
+              {isCustomCategory && (
+                <input 
+                  type="text"
+                  name="category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Escribí el nombre de la nueva categoría..."
+                  className="w-full h-14 px-5 rounded-2xl border border-indigo-200 bg-indigo-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-indigo-900 placeholder:text-indigo-300 animate-in slide-in-from-top-2 fade-in"
+                  autoFocus
+                />
+              )}
+            </div>
           </div>
 
           {/* SUBCATEGORÍA INTELIGENTE */}
           <div>
             <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Subcategoría</label>
             <input 
+              type="text"
               list="subcategories-list"
               name="subCategory"
               value={subCategory}
@@ -544,6 +697,33 @@ export function EditProductForm({ product }: Props) {
               <Box className="h-3 w-3" /> Unidades en Stock
             </label>
             <input type="number" name="stock" defaultValue={product.stock} className="w-full h-14 px-5 rounded-2xl border border-gray-100 bg-gray-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800" />
+          </div>
+        </div>
+
+        {/* TAGS */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Etiquetas (Tags)</label>
+          <div className="p-4 rounded-2xl border border-gray-100 bg-gray-50/30 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all">
+            <div className="flex flex-wrap gap-2 mb-3">
+              {tags.map(tag => (
+                <span key={tag} className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-indigo-100 text-indigo-700 text-sm font-bold">
+                  {tag}
+                  <button type="button" onClick={() => removeTag(tag)} className="hover:text-indigo-900"><X className="h-3 w-3" /></button>
+                </span>
+              ))}
+            </div>
+            <input 
+              type="text" 
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={handleAddTag}
+              placeholder="Escribí una etiqueta y presioná Enter..." 
+              className="w-full bg-transparent outline-none text-sm font-bold text-gray-800 placeholder:text-gray-400"
+              list="tags-suggestions"
+            />
+            <datalist id="tags-suggestions">
+              {availableTags.map(t => <option key={t} value={t} />)}
+            </datalist>
           </div>
         </div>
 
@@ -610,27 +790,27 @@ export function EditProductForm({ product }: Props) {
             {attributes.map((attr) => (
               <div key={attr.id} className="flex gap-4 items-center p-5 bg-gray-50/50 rounded-2xl border border-gray-100 group transition-all hover:bg-white hover:shadow-md">
                 <div className="w-1/3">
-                   <input 
-                     type="text" 
-                     defaultValue={attr.name} 
-                     placeholder="Ej: Peso" 
-                     className="w-full h-11 px-4 rounded-xl border-gray-200 bg-white text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                     onChange={(e) => {
-                       const valInput = document.getElementById(`val-${attr.id}`) as HTMLInputElement;
-                       if (valInput) valInput.name = `attr_${e.target.value}`;
-                     }}
-                   />
+                  <input 
+                    type="text" 
+                    value={attr.key} 
+                    onChange={(e) => updateAttribute(attr.id, 'key', e.target.value)}
+                    placeholder="Ej: Peso" 
+                    className="w-full h-11 px-4 rounded-xl border-gray-200 bg-white text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
                 </div>
                 <div className="flex-1">
-                   <input 
-                     id={`val-${attr.id}`} 
-                     type="text" 
-                     defaultValue={attr.value} 
-                     name={`attr_${attr.name}`} 
-                     placeholder="Ej: 500gr" 
-                     className="w-full h-11 px-4 rounded-xl border-gray-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" 
-                   />
+                  <input 
+                    type="text" 
+                    value={attr.value} 
+                    onChange={(e) => updateAttribute(attr.id, 'value', e.target.value)}
+                    placeholder="Ej: 500gr" 
+                    className="w-full h-11 px-4 rounded-xl border-gray-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" 
+                  />
                 </div>
+                {/* Input Oculto para FormData */}
+                {attr.key.trim() !== "" && (
+                  <input type="hidden" name={`attr_${attr.key.trim()}`} value={attr.value} />
+                )}
                 <button type="button" onClick={() => removeAttribute(attr.id)} className="p-3 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
                   <Trash2 className="h-5 w-5" />
                 </button>

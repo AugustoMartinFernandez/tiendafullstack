@@ -61,7 +61,7 @@ export function Pagination({ totalPages }: PaginationProps) {
         {generatePagination().map((page, index) => {
           if (page === "...") {
             return (
-              <span key={`ellipsis-${index}`} className="w-10 h-10 flex-shrink-0 flex items-center justify-center text-gray-400 font-bold">
+              <span key={`ellipsis-${index}`} className="w-10 h-10 shrink-0 flex items-center justify-center text-gray-400 font-bold">
                 ...
               </span>
             );
@@ -72,7 +72,7 @@ export function Pagination({ totalPages }: PaginationProps) {
               onMouseEnter={() => router.prefetch(createPageUrl(Number(page)))}
               onClick={() => handlePageChange(Number(page))}
               className={cn(
-                "w-10 h-10 flex-shrink-0 rounded-lg text-sm font-bold transition-all",
+                "w-10 h-10 shrink-0 rounded-lg text-sm font-bold transition-all",
                 currentPage === page
                   ? "bg-indigo-600 text-white shadow-md"
                   : "border border-gray-200 hover:bg-gray-50 text-gray-700"

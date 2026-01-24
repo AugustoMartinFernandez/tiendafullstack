@@ -1,125 +1,115 @@
 // src/app/(shop)/tienda/page.tsx
-import { db } from "@/lib/firebase";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
-import { Product } from "@/lib/types";
+import { getStoreProducts } from "@/lib/actions";
 import { ProductCard } from "@/components/shop/product-card";
-import { ShoppingBag } from "lucide-react";
-import { ProductFilters } from "@/components/shop/product-filters";
-import { CategoryFilter } from "@/components/shop/category-filter"; // Nuevo componente
-import { Pagination } from "@/components/shop/pagination";
+import { CategoryFilter } from "@/components/shop/category-filter";
+import { X, SearchX } from "lucide-react";
+import Link from "next/link";
+import { SearchInput } from "@/components/shop/search-input";
 
-// Revalidación Incremental (ISR): Actualiza la tienda cada 60 segundos si hay visitas
-export const revalidate = 60;
+export const revalidate = 0; // Forzar actualización dinámica
 
-async function getProducts(min: number | null, max: number | null, category?: string, subCategory?: string) {
-  try {
-    // Traemos solo productos visibles y ordenados por fecha
-    const productsRef = collection(db, "products");
-    const q = query(
-      productsRef, 
-      where("isVisible", "==", true),
-      orderBy("createdAt", "desc")
-    );
-    
-    const querySnapshot = await getDocs(q);
-    let products = querySnapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data() 
-    })) as Product[];
+export const metadata = {
+  title: "Tienda | Doña Jovita",
+  description: "Explorá nuestros productos artesanales.",
+};
 
-    // Filtrado en memoria (más flexible y robusto para rangos sin índices complejos)
-    if (min !== null) products = products.filter(p => p.price >= min);
-    if (max !== null) products = products.filter(p => p.price <= max);
-    if (category) products = products.filter(p => p.category === category);
-    if (subCategory) products = products.filter(p => p.subCategory === subCategory);
+export default async function ShopPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = await searchParams;
+  const category = typeof params.category === "string" ? params.category : undefined;
+  const subCategory = typeof params.subCategory === "string" ? params.subCategory : undefined;
+  const tag = typeof params.tag === "string" ? params.tag : undefined;
+  const search = typeof params.search === "string" ? params.search : undefined;
 
-    return products;
-  } catch (error) {
-    console.error("Error cargando productos:", error);
-    // Fallback seguro en caso de error (ej: falta de índice compuesto)
-    const querySnapshot = await getDocs(collection(db, "products"));
-    let products = querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() } as Product))
-      .filter(p => p.isVisible !== false);
-      
-    if (min !== null) products = products.filter(p => p.price >= min);
-    if (max !== null) products = products.filter(p => p.price <= max);
-    if (category) products = products.filter(p => p.category === category);
-    if (subCategory) products = products.filter(p => p.subCategory === subCategory);
-    
-    return products;
-  }
-}
-
-export default async function ShopPage({ searchParams }: { searchParams: Promise<{ min?: string, max?: string, category?: string, subCategory?: string, page?: string }> }) {
-  const { min, max, category, subCategory, page } = await searchParams;
-  const minPrice = min ? Number(min) : null;
-  const maxPrice = max ? Number(max) : null;
-  const currentPage = page ? Number(page) : 1;
-  const ITEMS_PER_PAGE = 12;
-
-  const allFilteredProducts = await getProducts(minPrice, maxPrice, category, subCategory);
-  
-  // Lógica de Paginación
-  const totalItems = allFilteredProducts.length;
-  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-  const paginatedProducts = allFilteredProducts.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-  
-  // Obtenemos todas las categorías disponibles para el filtro (podría optimizarse)
-  const allProducts = await getProducts(null, null); 
+  // 1. Obtener productos filtrados desde el servidor
+  const products = await getStoreProducts({ category, subCategory, tag, search });
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* --- HEADER DE LA TIENDA --- */}
-      <div className="bg-gray-50 border-b border-gray-100">
-        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-black tracking-tight text-gray-900 sm:text-4xl">
-            Nuestra Colección
-          </h1>
-          <p className="mt-4 text-base text-gray-500 max-w-2xl">
-            Explorá nuestros productos seleccionados con la calidad y tradición de Doña Jovita.
-          </p>
-        </div>
-      </div>
-
-      {/* --- NAVEGACIÓN DE CATEGORÍAS --- */}
-      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <CategoryFilter products={allProducts} currentCategory={category} currentSubCategory={subCategory} />
-        </div>
-      </div>
-
-      {/* --- CONTENIDO PRINCIPAL --- */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 animate-in fade-in duration-700 min-h-[80vh]">
+      <div className="flex flex-col gap-10">
         
-        {/* Barra de Herramientas (Filtros / Cantidad) */}
-        <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-100">
-          <span className="text-sm font-medium text-gray-500">
-            {totalItems} productos encontrados
-          </span>
-          <ProductFilters />
-        </div>
-
-        {/* --- GRILLA DE PRODUCTOS --- */}
-        {paginatedProducts.length > 0 ? (
-          <div className="grid grid-cols-1 gap-y-8 gap-x-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {paginatedProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </div>
-        ) : (
-          // Estado Vacío
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="rounded-full bg-gray-50 p-6 mb-4">
-              <ShoppingBag className="h-10 w-10 text-gray-300" />
+        {/* SECCIÓN 1: CABECERA Y FILTROS */}
+        <section className="flex flex-col gap-6 border-b border-gray-100 pb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div>
+              <h1 className="text-4xl font-black text-gray-900 tracking-tight">Nuestra Tienda</h1>
+              <p className="text-gray-500 mt-2 text-lg">Explorá nuestra colección de productos artesanales.</p>
             </div>
-            <h3 className="text-lg font-bold text-gray-900">No hay productos disponibles</h3>
-            <p className="text-gray-500 mt-2">Volvé a intentar más tarde.</p>
+            <div className="w-full md:w-auto md:min-w-[320px]">
+              <SearchInput />
+            </div>
           </div>
-        )}
+          
+          {/* Filtro de Categorías */}
+          <CategoryFilter 
+            products={products} 
+            currentCategory={category}
+            currentSubCategory={subCategory}
+          />
 
-        {/* --- PAGINACIÓN --- */}
-        <Pagination totalPages={totalPages} />
+          {/* Chip de Tag Activo */}
+          {tag && (
+            <div className="mt-4 flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
+              <span className="text-sm font-medium text-gray-500">Filtrado por etiqueta:</span>
+              <Link 
+                href="/tienda" 
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-sm font-bold hover:bg-indigo-200 transition-colors"
+              >
+                #{tag} <X className="h-3 w-3" />
+              </Link>
+            </div>
+          )}
+        </section>
+
+        {/* SECCIÓN 2: RESULTADOS */}
+        <section>
+          {products.length > 0 ? (
+            <>
+              {/* Barra de Resultados */}
+              <div className="flex items-center justify-between pb-4 mb-6 border-b border-gray-100">
+                <p className="text-sm text-gray-500">
+                  Mostrando <span className="font-bold text-gray-900">{products.length}</span> productos
+                </p>
+                {/* Aquí podrías agregar un Dropdown de "Ordenar por" en el futuro */}
+              </div>
+
+              <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-x-8">
+                {products.map((product) => (
+                  <ProductCard key={product.id} product={product} highlight={search} />
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-gray-100 rounded-3xl bg-gray-50/50">
+              <div className="p-4 bg-white rounded-full mb-4 shadow-sm">
+                 <SearchX className="h-8 w-8 text-gray-400" />
+              </div>
+              
+              {search ? (
+                <>
+                  <p className="text-lg font-bold text-gray-900">
+                    No encontramos resultados para "{search}"
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2 max-w-xs mx-auto">
+                    Intentá con términos más generales o revisá la ortografía.
+                  </p>
+                </>
+              ) : (
+                <p className="text-lg font-medium text-gray-500">No hay productos que coincidan con los filtros.</p>
+              )}
+              
+              <Link 
+                href="/tienda" 
+                className="mt-6 inline-flex items-center justify-center px-6 py-2.5 rounded-xl bg-gray-900 text-white font-bold hover:bg-indigo-600 transition-colors"
+              >
+                Limpiar filtros
+              </Link>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
