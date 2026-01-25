@@ -5,7 +5,7 @@ import { CategoryFilter } from "@/components/shop/category-filter";
 import { X, SearchX } from "lucide-react";
 import Link from "next/link";
 import { SearchInput } from "@/components/shop/search-input";
-
+export const dynamic = 'force-dynamic';
 export const revalidate = 0; // Forzar actualización dinámica
 
 export const metadata = {
@@ -91,7 +91,7 @@ export default async function ShopPage({
               {search ? (
                 <>
                   <p className="text-lg font-bold text-gray-900">
-                    No encontramos resultados para "{search}"
+                    No encontramos resultados para &quot;{search}&quot;
                   </p>
                   <p className="text-sm text-gray-500 mt-2 max-w-xs mx-auto">
                     Intentá con términos más generales o revisá la ortografía.

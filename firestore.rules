@@ -51,7 +51,10 @@ service cloud.firestore {
     // ---------------------------------------------------------
     match /orders/{orderId} {
       // CUALQUIERA puede crear un pedido (necesario para Checkout anónimo o logueado)
-      allow create: if true;
+      // FIX SEC-002: Validar integridad mínima de datos
+      allow create: if request.resource.data.keys().hasAll(['total', 'items', 'date']) &&
+                       request.resource.data.total is number &&
+                       request.resource.data.total > 0;
       
       // SOLO ADMIN puede leer, editar o borrar pedidos
       // (Opcional: El dueño del pedido también podría leerlo si implementamos historial)

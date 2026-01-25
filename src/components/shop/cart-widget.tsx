@@ -8,20 +8,15 @@ import { cn } from "@/lib/utils";
 
 export function CartWidget() {
   const { openCart, totalItems } = useCart();
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(() => typeof window !== 'undefined');
   const [bump, setBump] = useState(false);
-
-  // 1. Evitamos problemas de hidratación (el servidor renderiza sin badge, el cliente con badge)
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // 2. Animación de "salto" (bump) cuando cambia la cantidad
   useEffect(() => {
     if (totalItems > 0) {
-      setBump(true);
+      const raf = requestAnimationFrame(() => setBump(true));
       const timer = setTimeout(() => setBump(false), 300);
-      return () => clearTimeout(timer);
+      return () => { cancelAnimationFrame(raf); clearTimeout(timer); };
     }
   }, [totalItems]);
 

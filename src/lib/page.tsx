@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { getAllOrders, updateOrderStatus } from "@/lib/order-service";
 import { Order } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
@@ -14,16 +14,19 @@ export default function AdminSalesPage() {
   const [filter, setFilter] = useState("");
   const { showToast } = useToast();
 
-  useEffect(() => {
-    loadOrders();
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getAllOrders();
+      setOrders(data);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  async function loadOrders() {
-    setLoading(true);
-    const data = await getAllOrders();
-    setOrders(data);
-    setLoading(false);
-  }
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
 
   const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
     // Actualización optimista (UI primero)
@@ -118,7 +121,7 @@ export default function AdminSalesPage() {
                   <td className="px-6 py-4">
                     <select 
                       value={order.status}
-                      onChange={(e) => handleStatusChange(order.id, e.target.value as any)}
+                      onChange={(e) => handleStatusChange(order.id, e.target.value as Order['status'])}
                       className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 outline-none focus:border-indigo-500 cursor-pointer bg-white hover:bg-gray-50 transition-colors"
                     >
                       <option value="pending">Pendiente</option>

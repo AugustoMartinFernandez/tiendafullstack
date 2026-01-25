@@ -33,7 +33,7 @@ export interface Order {
   date: string;
   total: number;
   status: 'pending' | 'approved' | 'cancelled';
-  items: any[];
+  items: Record<string, unknown>[];
   guestInfo?: { // Datos para contacto si es invitado
     email: string;
     name: string;

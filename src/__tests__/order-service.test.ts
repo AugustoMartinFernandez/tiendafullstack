@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { getAllOrders, updateOrderStatus } from '../lib/order-service';
-import { getDocs, writeBatch, collection, doc, updateDoc } from 'firebase/firestore';
+import { getDocs, doc, updateDoc } from 'firebase/firestore';
 
 // --- Mocks globales de Firebase ---
 vi.mock('firebase/firestore', () => {
@@ -45,6 +45,7 @@ describe('Order Service', () => {
 
   it('updateOrderStatus should update document status', async () => {
     (updateDoc as unknown as Mock).mockResolvedValue(undefined);
+    (doc as unknown as Mock).mockReturnValue({ id: 'mock-ref' });
 
     const result = await updateOrderStatus('order-123', 'approved');
 

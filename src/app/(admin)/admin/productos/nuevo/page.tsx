@@ -14,6 +14,9 @@ import Image from "next/image";
 import Cropper, { Area } from "react-easy-crop";
 import { PRODUCT_CATEGORIES } from "@/lib/constants";
 
+export const dynamic = 'force-dynamic';
+
+
 // Sugerencias de subcategorías (Misma lógica que en edición)
 const SUB_CATEGORY_SUGGESTIONS: Record<string, string[]> = {
   "Ropa": ["Remeras", "Pantalones", "Abrigos", "Vestidos", "Deportiva"],
@@ -204,7 +207,7 @@ export default function NewProductPage() {
     getCategories().then((cats) => {
       setAvailableCategories(cats);
       // Si no hay categoría seleccionada, poner la primera por defecto
-      if (!category) setCategory(cats[0]);
+      setCategory((prev) => prev || cats[0]);
     });
   }, []);
 
@@ -227,7 +230,7 @@ export default function NewProductPage() {
     localStorage.setItem("watermark_enabled", String(useWatermark));
     localStorage.setItem("watermark_text", watermarkText);
     localStorage.setItem("watermark_color", watermarkColor);
-  }, [useWatermark, watermarkText]);
+  }, [useWatermark, watermarkText, watermarkColor]);
   
   // Cálculo de descuento en tiempo real
   const discountPercentage = (() => {
@@ -773,7 +776,7 @@ export default function NewProductPage() {
             {/* CHECKBOX MARCA DE AGUA */}
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
               <input id="wm" type="checkbox" checked={useWatermark} onChange={(e) => setUseWatermark(e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
-              <label htmlFor="wm" className="text-sm font-bold text-gray-700 select-none">Aplicar marca de agua "{watermarkText}"</label>
+              <label htmlFor="wm" className="text-sm font-bold text-gray-700 select-none">Aplicar marca de agua &quot;{watermarkText}&quot;</label>
             </div>
 
             <div className="flex gap-3">

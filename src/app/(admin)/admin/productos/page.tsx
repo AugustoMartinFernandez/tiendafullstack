@@ -4,8 +4,11 @@ import { AdminCategorySelector } from "@/components/admin/admin-category-selecto
 import Link from "next/link";
 import { Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
+export const dynamic = 'force-dynamic';
+
+
 export const metadata = {
-  title: "Admin Productos | Doña Jovita",
+  title: "Admin Productos",
 };
 
 export default async function AdminProductsPage({

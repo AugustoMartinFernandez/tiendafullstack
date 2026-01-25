@@ -4,30 +4,20 @@
 import { db, storage } from "./firebase";
 import { 
   doc, updateDoc, collection, addDoc, deleteDoc, getDoc, query, where, getDocs,
-  limit, startAfter, endBefore, limitToLast, orderBy, startAt, endAt, setDoc, arrayUnion, arrayRemove, writeBatch, getCountFromServer
+  limit, startAfter, endBefore, limitToLast, orderBy, startAt, endAt, setDoc, arrayUnion, arrayRemove, writeBatch, getCountFromServer, DocumentSnapshot, QueryConstraint
 } from "firebase/firestore";
 import { ref, deleteObject } from "firebase/storage";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { PRODUCT_CATEGORIES } from "@/lib/constants";
 import { Product } from "@/lib/types";
-
-// --- MOCK DE SEGURIDAD ---
-async function requireAdmin() {
-  // BLOQUEO DE SEGURIDAD (SEC-001):
-  // En producción, rechazamos cualquier intento de acción administrativa
-  // hasta que se implemente el sistema de autenticación real.
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("Acceso denegado: Las acciones administrativas están deshabilitadas en producción.");
-  }
-
-  // En desarrollo, permitimos el paso para no bloquear el flujo de trabajo.
-  return true;
-}
+import { requireAdmin } from "./auth-server";
 
 // --- HELPER: MAPEO SEGURO DE FIRESTORE (TYPE-001) ---
-function mapFirestoreDocToProduct(doc: any): Product {
+function mapFirestoreDocToProduct(doc: DocumentSnapshot): Product {
   const data = doc.data();
+  if (!data) throw new Error("Documento vacío");
+  
   return {
     id: doc.id,
     name: data.name ?? "",
@@ -49,7 +39,7 @@ function mapFirestoreDocToProduct(doc: any): Product {
 // --- HELPER: GUARDAR CATEGORÍA CUSTOM ---
 async function saveCustomCategory(category: string) {
   // Si ya está en las constantes, no hacemos nada
-  if (PRODUCT_CATEGORIES.includes(category as any)) return;
+  if (PRODUCT_CATEGORIES.includes(category as (typeof PRODUCT_CATEGORIES)[number])) return;
 
   try {
     const settingsRef = doc(db, "settings", "categories");
@@ -119,7 +109,8 @@ export async function revalidateStore() {
 
 // --- ACCIÓN 1: ACTUALIZAR EL HOME (Admin) ---
 export async function updateHomeConfig(formData: FormData) {
-  // Nota: También podríamos proteger esto, pero el requerimiento pedía create/update/delete product.
+  await requireAdmin();
+  
   const heroData = {
     hero: {
       title: formData.get("title") as string,
@@ -143,9 +134,8 @@ export async function updateHomeConfig(formData: FormData) {
 }
 
 // --- ACCIÓN 2: CREAR PRODUCTO NUEVO ---
-/*
 export async function createProduct(formData: FormData) {
-  await requireAdmin(); // Seguridad
+  await requireAdmin();
 
   // 1. Extraer atributos dinámicos
   const attributes: Record<string, string> = {};
@@ -231,12 +221,10 @@ export async function createProduct(formData: FormData) {
     return { success: false, message: "Error al guardar producto" };
   }
 }
-*/
 
 // --- ACCIÓN 3: BORRAR PRODUCTO ---
-/*
 export async function deleteProduct(formData: FormData) {
-  await requireAdmin(); // Seguridad
+  await requireAdmin();
 
   const id = formData.get("id") as string;
   try {
@@ -269,12 +257,10 @@ export async function deleteProduct(formData: FormData) {
     return { success: false, message: "Error al eliminar." };
   }
 }
-*/
 
 // --- ACCIÓN 4: CAMBIAR VISIBILIDAD ---
-/*
 export async function toggleProductVisibility(formData: FormData) {
-  // Opcional: Proteger también
+  await requireAdmin();
   const id = formData.get("id") as string;
   const currentStatus = formData.get("currentStatus") === "true";
   
@@ -291,12 +277,10 @@ export async function toggleProductVisibility(formData: FormData) {
     return { success: false, message: "Error al actualizar." };
   }
 }
-*/
 
 // --- ACCIÓN 5: DUPLICAR PRODUCTO ---
-/*
 export async function duplicateProduct(formData: FormData) {
-  // Opcional: Proteger también
+  await requireAdmin();
   const id = formData.get("id") as string;
   try {
     const originalRef = doc(db, "products", id);
@@ -319,12 +303,10 @@ export async function duplicateProduct(formData: FormData) {
     return { success: false, message: "Error al duplicar." };
   }
 }
-*/
 
 // --- ACCIÓN 6: EDITAR PRODUCTO EXISTENTE ---
-/*
 export async function updateProduct(formData: FormData) {
-  await requireAdmin(); // Seguridad
+  await requireAdmin();
 
   const id = formData.get("id") as string;
   if (!id) return { success: false, message: "ID del producto no encontrado." };
@@ -408,7 +390,6 @@ export async function updateProduct(formData: FormData) {
     return { success: false, message: "Error al actualizar." };
   }
 }
-*/
 
 // --- ACCIÓN 7: OBTENER CONFIGURACIÓN DE TIENDA ---
 export async function getStoreConfig() {
@@ -419,7 +400,7 @@ export async function getStoreConfig() {
       return docSnap.data();
     }
     return null;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -468,7 +449,7 @@ export async function getProductsCount() {
     const coll = collection(db, "products");
     const snapshot = await getCountFromServer(coll);
     return snapshot.data().count;
-  } catch (error) {
+  } catch {
     return 0;
   }
 }
@@ -495,7 +476,7 @@ export async function getTags() {
     const docRef = doc(db, "settings", "tags");
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? (docSnap.data().list || []) : [];
-  } catch (error) {
+  } catch {
     return [];
   }
 }
@@ -510,7 +491,7 @@ export async function deleteCustomCategory(category: string) {
     });
     revalidatePath("/admin/productos");
     return { success: true, message: "Categoría eliminada de la lista." };
-  } catch (error) {
+  } catch {
     return { success: false, message: "Error al eliminar categoría." };
   }
 }
@@ -531,7 +512,7 @@ export async function renameCustomCategory(oldName: string, newName: string) {
     await updateDoc(settingsRef, { list: arrayRemove(oldName) });
     
     // Si la nueva NO es fija, la agregamos (si es fija, solo migramos productos)
-    if (!PRODUCT_CATEGORIES.includes(newName as any)) {
+    if (!PRODUCT_CATEGORIES.includes(newName as (typeof PRODUCT_CATEGORIES)[number])) {
        await updateDoc(settingsRef, { list: arrayUnion(newName) });
     }
 
@@ -565,7 +546,7 @@ export async function getStoreProducts(filters: {
 } = {}) {
   try {
     const productsRef = collection(db, "products");
-    const constraints: any[] = [where("isVisible", "==", true)];
+    const constraints: QueryConstraint[] = [where("isVisible", "==", true)];
 
     // 1. Filtros Nativos de Firestore (Optimizan la lectura inicial)
     if (filters.category) constraints.push(where("category", "==", filters.category));
@@ -601,7 +582,7 @@ export async function getStoreProducts(filters: {
           check(product.category) ||
           check(product.subCategory) ||
           product.tags?.some((t: string) => check(t)) ||
-          (product.attributes && Object.values(product.attributes).some((v: any) => check(String(v))))
+          (product.attributes && Object.values(product.attributes).some((v: string) => check(String(v))))
         );
       });
 
@@ -633,7 +614,7 @@ export async function getAdminProducts(
     if (searchTerm) {
       // Búsqueda por nombre (Case sensitive en Firestore)
       // Ignoramos paginación compleja en búsqueda para simplificar UX
-      const constraints: any[] = [
+      const constraints: QueryConstraint[] = [
         orderBy("name"),
         startAt(searchTerm),
         endAt(searchTerm + "\uf8ff"),
@@ -647,7 +628,7 @@ export async function getAdminProducts(
       q = query(productsRef, ...constraints);
     } else {
       // Consulta base por fecha
-      const constraints: any[] = [orderBy("createdAt", "desc")];
+      const constraints: QueryConstraint[] = [orderBy("createdAt", "desc")];
 
       if (category) {
         constraints.unshift(where("category", "==", category));

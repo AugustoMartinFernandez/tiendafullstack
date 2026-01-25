@@ -5,8 +5,7 @@ import {
   updateDoc, 
   deleteDoc, 
   doc, 
-  getDoc,
-  serverTimestamp 
+  getDoc
 } from "firebase/firestore";
 import { ref, deleteObject } from "firebase/storage";
 
@@ -60,9 +59,9 @@ export async function createProductClient(formData: FormData) {
     });
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error creating product:", error);
-    return { success: false, message: error.message };
+    return { success: false, message: error instanceof Error ? error.message : "Error desconocido" };
   }
 }
 
@@ -83,7 +82,7 @@ export async function updateProductClient(id: string, formData: FormData) {
 
       // Borrar imágenes huérfanas de Storage (Best Practice)
       // Nota: Esto asume que la URL es de Firebase Storage y contiene el path
-      imagesToDelete.forEach(async (url) => {
+      await Promise.all(imagesToDelete.map(async (url) => {
         try {
           // Extraer referencia básica si es de nuestro storage
           if (url.includes("firebasestorage")) {
@@ -93,7 +92,7 @@ export async function updateProductClient(id: string, formData: FormData) {
         } catch (e) {
           console.warn("Error intentando borrar imagen:", url);
         }
-      });
+      }));
     }
 
     // 2. Actualizar documento
@@ -103,9 +102,9 @@ export async function updateProductClient(id: string, formData: FormData) {
     });
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error updating product:", error);
-    return { success: false, message: error.message };
+    return { success: false, message: error instanceof Error ? error.message : "Error desconocido" };
   }
 }
 
@@ -118,20 +117,20 @@ export async function deleteProductClient(id: string) {
     if (docSnap.exists()) {
        const data = docSnap.data();
        if (data.images && Array.isArray(data.images)) {
-         data.images.forEach(async (url: string) => {
+         await Promise.all(data.images.map(async (url: string) => {
             if (url.includes("firebasestorage")) {
                const imgRef = ref(storage, url);
                await deleteObject(imgRef).catch(() => null);
             }
-         });
+         }));
        }
     }
 
     await deleteDoc(productRef);
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error deleting product:", error);
-    return { success: false, message: error.message };
+    return { success: false, message: error instanceof Error ? error.message : "Error desconocido" };
   }
 }
 
@@ -142,9 +141,9 @@ export async function toggleProductVisibilityClient(id: string, currentStatus: b
       isVisible: !currentStatus 
     });
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error updating visibility:", error);
-    return { success: false, message: error.message };
+    return { success: false, message: error instanceof Error ? error.message : "Error desconocido" };
   }
 }
 
@@ -163,8 +162,8 @@ export async function duplicateProductClient(id: string) {
     });
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error duplicating product:", error);
-    return { success: false, message: error.message };
+    return { success: false, message: error instanceof Error ? error.message : "Error desconocido" };
   }
 }

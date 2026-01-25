@@ -25,22 +25,17 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [items, setItems] = useState<CartItem[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem("cart");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [isLoaded] = useState(() => typeof window !== 'undefined');
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // 1. Cargar del localStorage al iniciar (solo en el cliente)
-  useEffect(() => {
-    const savedCart = localStorage.getItem("cart");
-    if (savedCart) {
-      try {
-        setItems(JSON.parse(savedCart));
-      } catch (error) {
-        console.error("Error al cargar el carrito:", error);
-      }
-    }
-    setIsLoaded(true);
-  }, []);
+  // 1. Cargar del localStorage al iniciar (Eliminado por lazy init)
 
   // 1.5 Sincronización básica al loguearse (Placeholder para lógica futura de Firestore)
   useEffect(() => {

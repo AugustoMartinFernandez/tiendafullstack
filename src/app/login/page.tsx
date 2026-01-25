@@ -27,13 +27,15 @@ export default function LoginPage() {
       
       // No hacemos nada más aquí, esperamos la redirección del Guard.
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error en login:", err);
       
+      const firebaseError = err as { code?: string };
+
       // Manejo específico de errores comunes
-      if (err.code === 'auth/popup-closed-by-user') {
+      if (firebaseError.code === 'auth/popup-closed-by-user') {
         setError("Cancelaste el inicio de sesión.");
-      } else if (err.code === 'auth/network-request-failed') {
+      } else if (firebaseError.code === 'auth/network-request-failed') {
         setError("Error de conexión. Verificá tu internet.");
       } else {
         setError("Ocurrió un error inesperado. Intentá nuevamente.");

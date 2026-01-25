@@ -9,6 +9,7 @@ import { getStoreProducts, getCategories } from "@/lib/actions";
 import Image from "next/image";
 import Link from "next/link";
 import { formatPrice } from "@/lib/format";
+import { Product } from "@/lib/types";
 
 export function SearchInput() {
   const searchParams = useSearchParams();
@@ -16,10 +17,16 @@ export function SearchInput() {
   const inputRef = useRef<HTMLInputElement>(null);
   
   // 1. Estado local para el input (lo inicializamos con lo que haya en la URL)
-  const [term, setTerm] = useState(searchParams.get("search") || "");
+  const [term, setTerm] = useState(() => searchParams.get("search") || "");
   const [isFocused, setIsFocused] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [suggestions, setSuggestions] = useState<any[]>([]); // Estado para productos sugeridos
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem("shop_recent_searches");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [suggestions, setSuggestions] = useState<Product[]>([]); // Estado para productos sugeridos
   const [suggestedCategories, setSuggestedCategories] = useState<string[]>([]);
   const [allCategories, setAllCategories] = useState<string[]>([]);
 
@@ -35,21 +42,13 @@ export function SearchInput() {
     const urlSearch = searchParams.get("search") || "";
     // Solo actualizamos el input si la URL es diferente Y si NO es lo que acabamos de enviar nosotros
     if (urlSearch !== term && urlSearch !== lastPushedTerm.current) {
-      setTerm(urlSearch);
-      lastPushedTerm.current = urlSearch; // Sincronizamos para futuros cambios
+      const t = setTimeout(() => {
+        setTerm(urlSearch);
+        lastPushedTerm.current = urlSearch; // Sincronizamos para futuros cambios
+      }, 0);
+      return () => clearTimeout(t);
     }
   }, [searchParams, term]);
-
-  // 3. Cargar historial al montar
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("shop_recent_searches");
-      if (saved) {
-        try { setRecentSearches(JSON.parse(saved)); } 
-        catch (e) { console.error(e); }
-      }
-    }
-  }, []);
 
   // 4. Cargar todas las categorías al montar (para filtrado rápido)
   useEffect(() => {

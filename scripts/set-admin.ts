@@ -34,7 +34,7 @@ async function setAdminClaim() {
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
-      } catch (error) {
+      } catch {
         console.error('❌ Error crítico: No se encontró el archivo service-account.json en la raíz.');
         console.error('   Descárgalo desde Firebase Console -> Configuración -> Cuentas de servicio.');
         process.exit(1);
@@ -63,8 +63,9 @@ async function setAdminClaim() {
     console.log('   Firebase refresque el token con los nuevos permisos.');
     console.log('-------------------------------------------------------');
 
-  } catch (error: any) {
-    if (error.code === 'auth/user-not-found') {
+  } catch (error: unknown) {
+    const firebaseError = error as { code?: string };
+    if (firebaseError.code === 'auth/user-not-found') {
       console.error(`❌ Error: No existe ningún usuario registrado con el email ${email}.`);
       console.error('   El usuario debe registrarse primero en la app.');
     } else {

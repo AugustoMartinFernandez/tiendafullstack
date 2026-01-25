@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Product } from "@/lib/types";
-import { Eye, ShoppingBag, Check, ChevronLeft, ChevronRight, Heart } from "lucide-react";
+import { ShoppingBag, Check, ChevronLeft, ChevronRight, Heart } from "lucide-react";
 import { useCart } from "@/context/cart-context";
 import { useFavorites } from "@/context/favorites-context";
 import { formatPrice } from "@/lib/format";

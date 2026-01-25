@@ -19,7 +19,7 @@ async function fixVisibility() {
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
-      } catch (error) {
+      } catch {
         console.error('❌ Error: No se encontró service-account.json en la raíz.');
         process.exit(1);
       }
