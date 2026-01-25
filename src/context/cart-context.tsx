@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Product } from "@/lib/types";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 export interface CartItem extends Product {
   quantity: number;
@@ -39,6 +41,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
     setIsLoaded(true);
   }, []);
+
+  // 1.5 Sincronización básica al loguearse (Placeholder para lógica futura de Firestore)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && isLoaded) {
+        // Aquí iría la lógica para leer el carrito de Firestore y fusionarlo
+        // Por ahora, mantenemos el de localStorage que es el comportamiento "Soft Login" deseado
+      }
+    });
+    return () => unsubscribe();
+  }, [isLoaded]);
 
   // 2. Guardar en localStorage cada vez que cambia el carrito
   useEffect(() => {

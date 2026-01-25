@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Dialog, DialogPanel } from "@headlessui/react";
-import { Menu, X, ShoppingBag, Heart } from "lucide-react";
+import { Menu, X, ShoppingBag, Heart, LayoutDashboard } from "lucide-react";
 import { useCart } from "@/context/cart-context";
 import { CartWidget } from "@/components/shop/cart-widget";
+import { useAuth } from "@/context/auth-context";
 import { cn } from "@/lib/utils";
 import { TransitionLink } from "@/components/ui/TransitionLink";
 
@@ -24,6 +25,7 @@ const navigation = [
 export function Navbar({ logoUrl, storeName }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { openCart, totalItems } = useCart();
+  const { profile } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
@@ -83,6 +85,17 @@ export function Navbar({ logoUrl, storeName }: NavbarProps) {
               {item.name}
             </TransitionLink>
           ))}
+
+          {/* Botón Admin (Solo visible para administradores) */}
+          {profile?.role === "admin" && (
+            <TransitionLink
+              href="/admin"
+              className="flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-500 transition-colors"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              Admin
+            </TransitionLink>
+          )}
         </div>
 
         {/* CARRITO Y LOGIN */}
@@ -139,6 +152,18 @@ export function Navbar({ logoUrl, storeName }: NavbarProps) {
                     {item.name}
                   </TransitionLink>
                 ))}
+
+                {/* Botón Admin Móvil */}
+                {profile?.role === "admin" && (
+                  <TransitionLink
+                    href="/admin"
+                    className="-mx-3 flex items-center gap-2 rounded-lg px-3 py-2 text-base font-bold leading-7 text-indigo-600 hover:bg-indigo-50"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <LayoutDashboard className="h-5 w-5" />
+                    Panel Admin
+                  </TransitionLink>
+                )}
               </div>
               <div className="py-6">
                 <button

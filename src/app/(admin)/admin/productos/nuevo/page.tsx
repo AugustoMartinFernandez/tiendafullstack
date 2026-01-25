@@ -1,6 +1,7 @@
 "use client";
 
-import { createProduct, getCategories, getTags } from "@/lib/actions";
+import { getCategories, getTags, revalidateStore } from "@/lib/actions";
+import { createProductClient } from "@/lib/client-actions";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Plus, Trash2, Save, ArrowLeft, Link as LinkIcon, UploadCloud, X, FileText, Tag, Box, Check, Crop as CropIcon, Printer } from "lucide-react";
@@ -420,12 +421,14 @@ export default function NewProductPage() {
     tags.forEach((tag) => formData.append("tags", tag));
 
     try {
-      const result = await createProduct(formData);
+      // 1. Escritura desde el Cliente
+      const result = await createProductClient(formData);
 
       if (result.success) {
+        // 2. Revalidar caché
+        await revalidateStore();
         showToast("Producto creado con éxito", "success");
         router.push("/admin/productos");
-        router.refresh(); // <--- IMPORTANTE: Fuerza a recargar la lista de productos
       } else {
         showToast("Error: " + result.message, "error");
       }

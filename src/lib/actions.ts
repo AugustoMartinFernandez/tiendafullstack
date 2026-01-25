@@ -10,12 +10,40 @@ import { ref, deleteObject } from "firebase/storage";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { PRODUCT_CATEGORIES } from "@/lib/constants";
+import { Product } from "@/lib/types";
 
 // --- MOCK DE SEGURIDAD ---
 async function requireAdmin() {
-  // TODO: Conectar con sistema de autenticación real (ej: Firebase Auth / NextAuth)
-  // Por ahora, permitimos el paso para no bloquear el desarrollo.
+  // BLOQUEO DE SEGURIDAD (SEC-001):
+  // En producción, rechazamos cualquier intento de acción administrativa
+  // hasta que se implemente el sistema de autenticación real.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Acceso denegado: Las acciones administrativas están deshabilitadas en producción.");
+  }
+
+  // En desarrollo, permitimos el paso para no bloquear el flujo de trabajo.
   return true;
+}
+
+// --- HELPER: MAPEO SEGURO DE FIRESTORE (TYPE-001) ---
+function mapFirestoreDocToProduct(doc: any): Product {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    name: data.name ?? "",
+    price: Number(data.price) || 0,
+    images: Array.isArray(data.images) ? data.images : [],
+    category: data.category ?? "",
+    stock: Number(data.stock) || 0,
+    sku: data.sku ?? undefined,
+    originalPrice: data.originalPrice ? Number(data.originalPrice) : undefined,
+    imageUrl: data.imageUrl ?? undefined,
+    subCategory: data.subCategory ?? undefined,
+    tags: Array.isArray(data.tags) ? data.tags : undefined,
+    attributes: data.attributes ?? undefined,
+    isVisible: data.isVisible ?? true,
+    description: data.description ?? undefined,
+  };
 }
 
 // --- HELPER: GUARDAR CATEGORÍA CUSTOM ---
@@ -82,6 +110,13 @@ const productSchema = z.object({
   return true;
 }, { message: "El precio original debe ser mayor al precio de venta.", path: ["originalPrice"] });
 
+// --- NUEVA ACCIÓN: REVALIDAR TIENDA ---
+export async function revalidateStore() {
+  revalidatePath("/");
+  revalidatePath("/tienda");
+  revalidatePath("/admin/productos");
+}
+
 // --- ACCIÓN 1: ACTUALIZAR EL HOME (Admin) ---
 export async function updateHomeConfig(formData: FormData) {
   // Nota: También podríamos proteger esto, pero el requerimiento pedía create/update/delete product.
@@ -108,6 +143,7 @@ export async function updateHomeConfig(formData: FormData) {
 }
 
 // --- ACCIÓN 2: CREAR PRODUCTO NUEVO ---
+/*
 export async function createProduct(formData: FormData) {
   await requireAdmin(); // Seguridad
 
@@ -195,8 +231,10 @@ export async function createProduct(formData: FormData) {
     return { success: false, message: "Error al guardar producto" };
   }
 }
+*/
 
 // --- ACCIÓN 3: BORRAR PRODUCTO ---
+/*
 export async function deleteProduct(formData: FormData) {
   await requireAdmin(); // Seguridad
 
@@ -231,8 +269,10 @@ export async function deleteProduct(formData: FormData) {
     return { success: false, message: "Error al eliminar." };
   }
 }
+*/
 
 // --- ACCIÓN 4: CAMBIAR VISIBILIDAD ---
+/*
 export async function toggleProductVisibility(formData: FormData) {
   // Opcional: Proteger también
   const id = formData.get("id") as string;
@@ -251,8 +291,10 @@ export async function toggleProductVisibility(formData: FormData) {
     return { success: false, message: "Error al actualizar." };
   }
 }
+*/
 
 // --- ACCIÓN 5: DUPLICAR PRODUCTO ---
+/*
 export async function duplicateProduct(formData: FormData) {
   // Opcional: Proteger también
   const id = formData.get("id") as string;
@@ -277,8 +319,10 @@ export async function duplicateProduct(formData: FormData) {
     return { success: false, message: "Error al duplicar." };
   }
 }
+*/
 
 // --- ACCIÓN 6: EDITAR PRODUCTO EXISTENTE ---
+/*
 export async function updateProduct(formData: FormData) {
   await requireAdmin(); // Seguridad
 
@@ -364,6 +408,7 @@ export async function updateProduct(formData: FormData) {
     return { success: false, message: "Error al actualizar." };
   }
 }
+*/
 
 // --- ACCIÓN 7: OBTENER CONFIGURACIÓN DE TIENDA ---
 export async function getStoreConfig() {
@@ -522,30 +567,31 @@ export async function getStoreProducts(filters: {
     const productsRef = collection(db, "products");
     const constraints: any[] = [where("isVisible", "==", true)];
 
-    // Aplicamos filtros estrictos de base (Categoría, Subcategoría, Tag)
-    // Esto optimiza la lectura en Firebase antes de filtrar en memoria
+    // 1. Filtros Nativos de Firestore (Optimizan la lectura inicial)
     if (filters.category) constraints.push(where("category", "==", filters.category));
     if (filters.subCategory) constraints.push(where("subCategory", "==", filters.subCategory));
     if (filters.tag) constraints.push(where("tags", "array-contains", filters.tag));
 
-    // Si NO hay búsqueda, usamos el ordenamiento y límite de Firestore
-    if (!filters.search) {
-      constraints.push(orderBy("createdAt", "desc"));
-      if (filters.limitCount) constraints.push(limit(filters.limitCount));
-    }
+    // 2. Ordenamiento Consistente
+    // Siempre ordenamos por fecha para asegurar que buscamos/mostramos lo más nuevo.
+    constraints.push(orderBy("createdAt", "desc"));
+
+    // 3. Límite Defensivo (FIX PERF-001)
+    // Si hay búsqueda, leemos un pool más grande (ej: 100) para filtrar en memoria.
+    // Si no hay búsqueda, respetamos el límite de paginación solicitado o un default.
+    const dbReadLimit = filters.search ? 100 : (filters.limitCount || 12);
+    constraints.push(limit(dbReadLimit));
 
     const q = query(productsRef, ...constraints);
     const snapshot = await getDocs(q);
     
-    let products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+    let products = snapshot.docs.map(mapFirestoreDocToProduct);
 
-    // LÓGICA DE BÚSQUEDA PROFUNDA (In-Memory)
-    // Filtramos por Nombre, SKU, Descripción, Categoría, Tags y Atributos (Color, Talle, etc.)
+    // 4. Filtrado Profundo en Memoria (Solo sobre el pool limitado)
     if (filters.search) {
       const term = filters.search.toLowerCase().trim();
       
-      products = products.filter((product: any) => {
-        // Helper para verificar texto de forma segura
+      products = products.filter((product: Product) => {
         const check = (val?: string) => val?.toLowerCase().includes(term);
 
         return (
@@ -555,41 +601,21 @@ export async function getStoreProducts(filters: {
           check(product.category) ||
           check(product.subCategory) ||
           product.tags?.some((t: string) => check(t)) ||
-          // Búsqueda en atributos dinámicos (ej: Color: Rojo, Talle: XL)
           (product.attributes && Object.values(product.attributes).some((v: any) => check(String(v))))
         );
       });
+
+      // Si se solicitó un límite de salida específico (ej: sugerencias), recortamos ahora
+      if (filters.limitCount) {
+        products = products.slice(0, filters.limitCount);
+      }
     }
 
     return products;
   } catch (error) {
     console.error("Error fetching store products:", error);
-    
-    // --- FALLBACK DE ORDENAMIENTO EN MEMORIA ---
-    // Si falla el índice compuesto, traemos los productos filtrados (sin ordenar)
-    // y los ordenamos aquí.
-    try {
-      const productsRef = collection(db, "products");
-      const constraints: any[] = [where("isVisible", "==", true)];
-      
-      // Re-aplicamos filtros básicos que no requieren índice compuesto complejo
-      if (filters.category) constraints.push(where("category", "==", filters.category));
-      if (filters.subCategory) constraints.push(where("subCategory", "==", filters.subCategory));
-
-      const q = query(productsRef, ...constraints);
-      const snapshot = await getDocs(q);
-      const products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-
-      // Ordenar por fecha (Más nuevo primero)
-      return products.sort((a: any, b: any) => {
-        const dateA = new Date(a.createdAt || 0).getTime();
-        const dateB = new Date(b.createdAt || 0).getTime();
-        return dateB - dateA;
-      });
-    } catch (fallbackError) {
-      // Lanzamos el error para que error.tsx lo capture y muestre la UI de error
-      throw new Error("Error crítico al cargar productos.");
-    }
+    // Fallback silencioso en caso de error crítico
+    return [];
   }
 }
 
@@ -652,7 +678,7 @@ export async function getAdminProducts(
 
     const snapshot = await getDocs(q);
     // Mapeamos los datos
-    const products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+    const products = snapshot.docs.map(mapFirestoreDocToProduct);
 
     return {
       products,
@@ -678,9 +704,9 @@ export async function validateFavorites(ids: string[]) {
     const validProducts = docsSnap
       .map((snap) => {
         if (!snap.exists()) return null;
-        return { id: snap.id, ...snap.data() } as any;
+        return mapFirestoreDocToProduct(snap);
       })
-      .filter((p) => p !== null);
+      .filter((p): p is Product => p !== null);
 
     return validProducts;
   } catch (error) {

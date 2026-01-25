@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------
+    // 🛡️ FUNCIONES DE SEGURIDAD (HELPERS)
+    // ---------------------------------------------------------
+
+    // Verifica si el usuario es el Administrador Supremo (Tu Email)
+    function isAdmin() {
+      return request.auth != null && (request.auth.token.admin == true || request.auth.token.email == "mff061022@gmail.com");
+    }
+
+    // Verifica si el usuario es el dueño del documento (Para perfiles de clientes)
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // ---------------------------------------------------------
+    // 📦 PRODUCTOS (Catálogo)
+    // ---------------------------------------------------------
+    match /products/{productId} {
+      // CUALQUIERA puede ver los productos (Público)
+      allow read: if true;
+
+      // SOLO ADMIN puede Crear, Editar o Borrar
+      allow write: if isAdmin() && 
+                   // Validación estricta de campos (Lista Blanca Anti-Hackeo)
+                   // AQUI ESTÁN AGREGADOS TUS NUEVOS CAMPOS: sku, subCategory, attributes, etc.
+                   request.resource.data.keys().hasOnly([
+                     'id', 'name', 'price', 'description', 'stock', 'category', 
+                     'tags', 'images', 'createdAt', 'updatedAt',
+                     'sku', 'originalPrice', 'subCategory', 'attributes', 'isVisible'
+                   ]) &&
+                   // Validaciones de tipo de dato (Integridad)
+                   request.resource.data.name is string &&
+                   request.resource.data.price is number &&
+                   request.resource.data.stock is number;
+    }
+
+    // ---------------------------------------------------------
+    // 👤 USUARIOS (Clientes)
+    // ---------------------------------------------------------
+    match /users/{userId} {
+      // El dueño puede leer y escribir su propia info. El Admin puede ver todo.
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // 🛒 PEDIDOS / ORDENES (Historial)
+    // ---------------------------------------------------------
+    match /orders/{orderId} {
+      // CUALQUIERA puede crear un pedido (necesario para Checkout anónimo o logueado)
+      allow create: if true;
+      
+      // SOLO ADMIN puede leer, editar o borrar pedidos
+      // (Opcional: El dueño del pedido también podría leerlo si implementamos historial)
+      allow read, update, delete: if isAdmin() || (request.auth != null && resource.data.userId == request.auth.uid);
+    }
+
+    // ---------------------------------------------------------
+    // ⚙️ CONFIGURACIÓN (Home, Banners, etc.)
+    // ---------------------------------------------------------
+    match /settings/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // 🚫 BLOQUEO FINAL (Todo lo demás está prohibido)
+    // ---------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

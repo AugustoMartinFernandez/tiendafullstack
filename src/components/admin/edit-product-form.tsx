@@ -1,6 +1,7 @@
 "use client";
 
-import { updateProduct, getCategories, getTags } from "@/lib/actions";
+import { getCategories, getTags, revalidateStore } from "@/lib/actions";
+import { updateProductClient } from "@/lib/client-actions";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Product } from "@/lib/types";
@@ -317,11 +318,21 @@ export function EditProductForm({ product }: Props) {
 
     const printWindow = window.open("", "_blank", "width=500,height=600");
     if (printWindow) {
+      // FIX SEC-002: Sanitización manual para prevenir XSS
+      const escapeHtml = (str: string) => {
+        return str.replace(/[&<>"']/g, (tag) => {
+          const chars: Record<string, string> = {
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+          };
+          return chars[tag] || tag;
+        });
+      };
+
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
           <head>
-            <title>Etiqueta ${sku}</title>
+            <title>Etiqueta ${escapeHtml(sku)}</title>
             <style>
               body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
               .label { text-align: center; font-family: 'Arial', sans-serif; padding: 20px; }
@@ -330,13 +341,13 @@ export function EditProductForm({ product }: Props) {
           </head>
           <body>
             <div class="label">
-              <div class="product-name">${product.name}</div>
+              <div class="product-name">${escapeHtml(product.name)}</div>
               <svg id="barcode"></svg>
             </div>
             <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
             <script>
               try {
-                JsBarcode("#barcode", "${sku}", {
+                JsBarcode("#barcode", "${escapeHtml(sku)}", {
                   format: "CODE128",
                   width: 2,
                   height: 60,
@@ -493,10 +504,14 @@ export function EditProductForm({ product }: Props) {
     tags.forEach(tag => formData.append("tags", tag));
 
     try {
-      const result = await updateProduct(formData);
+      // 1. Escritura desde el Cliente (pasa reglas de seguridad)
+      const result = await updateProductClient(product.id, formData);
+      
       if (result.success) {
+        // 2. Revalidar caché del servidor
+        await revalidateStore();
+        showToast("Producto actualizado correctamente", "success");
         router.push("/admin/productos");
-        router.refresh();
       } else {
         showToast("Error del servidor: " + result.message, "error");
       }

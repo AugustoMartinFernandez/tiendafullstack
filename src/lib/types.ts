@@ -15,3 +15,28 @@ export interface Product {
   isVisible?: boolean;
   description?: string;
 }
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  phone?: string;
+  role: 'customer' | 'admin';
+  createdAt: string;
+  profilePhoto?: string;
+  defaultAddress?: string;
+}
+
+export interface Order {
+  id: string;
+  userId: string | null; // Null para invitados
+  date: string;
+  total: number;
+  status: 'pending' | 'approved' | 'cancelled';
+  items: any[];
+  guestInfo?: { // Datos para contacto si es invitado
+    email: string;
+    name: string;
+    phone: string;
+  };
+}
