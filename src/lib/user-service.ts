@@ -9,9 +9,20 @@ export async function syncUserWithFirestore(user: User): Promise<UserProfile | n
   const userRef = doc(db, "users", user.uid);
   const userSnap = await getDoc(userRef);
 
+  // Obtener claims para verificar rol real en Auth
+  const token = await user.getIdTokenResult();
+  const isAdmin = token.claims.role === 'admin';
+
   if (userSnap.exists()) {
     // Usuario existente: Retornamos sus datos
-    return userSnap.data() as UserProfile;
+    const data = userSnap.data() as UserProfile;
+    
+    // Auto-corregir: Si es admin en Auth pero no en DB, corregir DB
+    if (isAdmin && data.role !== 'admin') {
+        await updateDoc(userRef, { role: 'admin' });
+        data.role = 'admin';
+    }
+    return data;
   } else {
     // Usuario nuevo: Lo creamos
     const newUser: UserProfile = {
@@ -19,7 +30,7 @@ export async function syncUserWithFirestore(user: User): Promise<UserProfile | n
       email: user.email || "",
       displayName: user.displayName || "Usuario",
       phone: user.phoneNumber || "",
-      role: "customer",
+      role: isAdmin ? 'admin' : "customer",
       createdAt: new Date().toISOString(),
       profilePhoto: user.photoURL || "",
       defaultAddress: "",

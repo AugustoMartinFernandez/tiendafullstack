@@ -1,7 +1,6 @@
 "use client";
 
-import { getCategories, getTags, revalidateStore } from "@/lib/actions";
-import { updateProductClient } from "@/lib/client-actions";
+import { getCategories, getTags, revalidateStore, updateProduct } from "@/lib/actions";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Product } from "@/lib/types";
@@ -504,8 +503,8 @@ export function EditProductForm({ product }: Props) {
     tags.forEach(tag => formData.append("tags", tag));
 
     try {
-      // 1. Escritura desde el Cliente (pasa reglas de seguridad)
-      const result = await updateProductClient(product.id, formData);
+      // 1. Escritura desde el Servidor (Server Action)
+      const result = await updateProduct(formData);
       
       if (result.success) {
         // 2. Revalidar caché del servidor

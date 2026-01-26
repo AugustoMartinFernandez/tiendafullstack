@@ -57,3 +57,40 @@ export function ProductGridSkeleton({ count = 8 }: { count?: number }) {
     </div>
   );
 }
+
+export function ProfileSkeleton() {
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto space-y-8">
+        {/* Profile Card Skeleton */}
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex flex-col md:flex-row items-center gap-8">
+          <Skeleton className="h-24 w-24 rounded-full shrink-0" />
+          <div className="flex-1 space-y-4 w-full text-center md:text-left">
+            <Skeleton className="h-8 w-48 mx-auto md:mx-0" />
+            <Skeleton className="h-4 w-32 mx-auto md:mx-0" />
+            <Skeleton className="h-4 w-40 mx-auto md:mx-0" />
+          </div>
+          <Skeleton className="h-10 w-32 rounded-xl" />
+        </div>
+
+        {/* Quick Access Skeleton */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-2xl" />
+          ))}
+        </div>
+
+        {/* Orders Skeleton */}
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-50">
+            <Skeleton className="h-6 w-32" />
+          </div>
+          <div className="p-6 space-y-4">
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,7 +1,6 @@
 "use client";
 
-import { getCategories, getTags, revalidateStore } from "@/lib/actions";
-import { createProductClient } from "@/lib/client-actions";
+import { getCategories, getTags, revalidateStore, createProduct } from "@/lib/actions";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Plus, Trash2, Save, ArrowLeft, Link as LinkIcon, UploadCloud, X, FileText, Tag, Box, Check, Crop as CropIcon, Printer } from "lucide-react";
@@ -192,7 +191,7 @@ export default function NewProductPage() {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [useWatermark, setUseWatermark] = useState(true);
-  const [watermarkText, setWatermarkText] = useState("Doña Jovita");
+  const [watermarkText, setWatermarkText] = useState("Mi Tienda Pro");
   const [watermarkColor, setWatermarkColor] = useState("rgba(255, 255, 255, 0.6)");
   
   // Estado para notificaciones
@@ -424,8 +423,8 @@ export default function NewProductPage() {
     tags.forEach((tag) => formData.append("tags", tag));
 
     try {
-      // 1. Escritura desde el Cliente
-      const result = await createProductClient(formData);
+      // 1. Escritura vía Server Action (Admin SDK) - Única fuente de verdad
+      const result = await createProduct(formData);
 
       if (result.success) {
         // 2. Revalidar caché

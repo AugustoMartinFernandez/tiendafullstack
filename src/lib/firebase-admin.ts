@@ -1,40 +1,22 @@
-import "server-only";
-import { initializeApp, getApps, getApp, cert, App } from "firebase-admin/app";
-import { getAuth, Auth } from "firebase-admin/auth";
+import admin from "firebase-admin";
 
-let app: App | null = null;
-let auth: Auth | null = null;
-
-function getServiceAccount() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-
-  if (!raw) {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT_KEY is not defined");
+if (!admin.apps.length) {
+  const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64;
+  if (!serviceAccountBase64) {
+    throw new Error("❌ Variable FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 no definida en .env.local");
   }
 
-  return JSON.parse(raw);
-}
+  const serviceAccount = JSON.parse(
+    Buffer.from(serviceAccountBase64, "base64").toString("utf-8")
+  );
 
-export function getAdminApp(): App {
-  if (app) return app;
-
-  if (getApps().length > 0) {
-    app = getApp();
-    return app;
-  }
-
-  const serviceAccount = getServiceAccount();
-
-  app = initializeApp({
-    credential: cert(serviceAccount),
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
   });
 
-  return app;
+  console.log("✅ Firebase Admin inicializado correctamente.");
 }
 
-export function getAdminAuth(): Auth {
-  if (auth) return auth;
-
-  auth = getAuth(getAdminApp());
-  return auth;
-}
+export const getAdminAuth = () => admin.auth();
+export const getAdminDb = () => admin.firestore();
+export const getAdminStorage = () => admin.storage();

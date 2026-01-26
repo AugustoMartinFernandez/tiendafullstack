@@ -17,7 +17,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         try {
           // Forzamos refresh para asegurar claims actualizados si viene de un login reciente
           const token = await user.getIdTokenResult(true);
-          if (token.claims.admin) {
+          if (token.claims.role === 'admin') {
             router.replace("/admin");
           } else {
             router.replace("/tienda");

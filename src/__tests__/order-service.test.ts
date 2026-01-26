@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { getAllOrders, updateOrderStatus } from '../lib/order-service';
-import { getDocs, doc, updateDoc } from 'firebase/firestore';
+import { getAllOrders } from '../lib/order-service';
+import { getDocs } from 'firebase/firestore';
 
 // --- Mocks globales de Firebase ---
 vi.mock('firebase/firestore', () => {
@@ -41,17 +41,6 @@ describe('Order Service', () => {
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe('1');
     expect(result[1].total).toBe(200);
-  });
-
-  it('updateOrderStatus should update document status', async () => {
-    (updateDoc as unknown as Mock).mockResolvedValue(undefined);
-    (doc as unknown as Mock).mockReturnValue({ id: 'mock-ref' });
-
-    const result = await updateOrderStatus('order-123', 'approved');
-
-    expect(result.success).toBe(true);
-    expect(updateDoc).toHaveBeenCalledTimes(1);
-    expect(updateDoc).toHaveBeenCalledWith(expect.anything(), { status: 'approved' });
   });
 
   it('getUserOrders should return only user orders', async () => {

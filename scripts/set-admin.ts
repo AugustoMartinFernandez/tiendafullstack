@@ -46,15 +46,21 @@ async function setAdminClaim() {
     const user = await admin.auth().getUserByEmail(email);
     console.log(`✅ Usuario encontrado: ${user.uid}`);
 
-    // 2. Asignar Custom Claim { admin: true }
+    // 2. Asignar Custom Claim { role: 'admin' }
     // Preservamos otros claims si existieran
     const currentClaims = user.customClaims || {};
-    const newClaims = { ...currentClaims, admin: true };
+    const newClaims = { ...currentClaims, role: 'admin' };
 
     console.log('🛡️  Firmando token con privilegios de ADMIN...');
     await admin.auth().setCustomUserClaims(user.uid, newClaims);
 
-    // 3. Confirmación
+    // 3. Actualizar Firestore para que la UI lo refleje inmediatamente
+    console.log('📝 Sincronizando perfil en Firestore...');
+    await admin.firestore().collection('users').doc(user.uid).set({
+        role: 'admin'
+    }, { merge: true });
+
+    // 4. Confirmación
     console.log('-------------------------------------------------------');
     console.log(`🎉 ¡ÉXITO! El usuario ${email} ahora es ADMIN.`);
     console.log('-------------------------------------------------------');

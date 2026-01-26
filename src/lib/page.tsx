@@ -1,143 +1,98 @@
-"use client";
+import { getStoreProducts, getCategories } from "@/lib/actions";
+import { ProductCard } from "@/components/shop/product-card";
+import { ProductFilters } from "@/components/shop/product-filters";
+import { CategoryFilter } from "@/components/shop/category-filter";
+import { Pagination } from "@/components/shop/pagination";
+import { ShoppingBag } from "lucide-react";
+import { Product } from "@/lib/types";
 
-import { useEffect, useState, useCallback } from "react";
-import { getAllOrders, updateOrderStatus } from "@/lib/order-service";
-import { Order } from "@/lib/types";
-import { formatPrice } from "@/lib/format";
-import { Loader2, CheckCircle, XCircle, Clock, Search } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useToast } from "@/context/toast-context";
+export const revalidate = 60; // Revalida el caché de esta página cada 60 segundos
 
-export default function AdminSalesPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("");
-  const { showToast } = useToast();
+export default async function TiendaPage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
+  // 1. Parsear parámetros de la URL para filtros
+  const page = searchParams.page ? Number(searchParams.page) : 1;
+  const minPrice = searchParams.min ? Number(searchParams.min) : undefined;
+  const maxPrice = searchParams.max ? Number(searchParams.max) : undefined;
+  const category = typeof searchParams.category === "string" ? searchParams.category : undefined;
+  const subCategory = typeof searchParams.subCategory === "string" ? searchParams.subCategory : undefined;
+  const ITEMS_PER_PAGE = 12;
 
-  const loadOrders = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getAllOrders();
-      setOrders(data);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // 2. Obtener datos usando las Server Actions robustas que ya creamos
+  // Esto centraliza la lógica y aprovecha el "Plan B" para índices faltantes.
+  const allFilteredProducts: Product[] = await getStoreProducts({
+    category,
+    subCategory,
+    minPrice,
+    maxPrice,
+  });
 
-  useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
+  const allCategories = await getCategories();
 
-  const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
-    // Actualización optimista (UI primero)
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-    
-    const result = await updateOrderStatus(orderId, newStatus);
-    
-    if (result.success) {
-      showToast("Estado actualizado correctamente", "success");
-    } else {
-      showToast("Error al actualizar el estado", "error");
-      loadOrders(); // Revertir cambios si falla
-    }
-  };
-
-  const filteredOrders = orders.filter(order => 
-    order.id.toLowerCase().includes(filter.toLowerCase()) ||
-    order.guestInfo?.email.toLowerCase().includes(filter.toLowerCase()) ||
-    order.guestInfo?.name.toLowerCase().includes(filter.toLowerCase())
+  // 3. Aplicar paginación en el servidor a los datos ya filtrados
+  const totalItems = allFilteredProducts.length;
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+  const paginatedProducts = allFilteredProducts.slice(
+    (page - 1) * ITEMS_PER_PAGE,
+    page * ITEMS_PER_PAGE
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="text-2xl font-black text-gray-900">Ventas y Pedidos</h1>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Buscar por ID, nombre o email..." 
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="bg-gray-50 border-b border-gray-200">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <h1 className="text-4xl font-black tracking-tight text-gray-900">
+            Nuestra Tienda
+          </h1>
+          <p className="mt-4 text-base text-gray-500 max-w-2xl">
+            Explorá nuestra colección de productos.
+          </p>
+        </div>
+      </div>
+
+      {/* Filtros de Categoría */}
+      <div className="sticky top-[60px] md:top-[72px] z-30 bg-white/80 backdrop-blur-md border-b border-gray-200">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <CategoryFilter 
+            allCategories={allCategories}
+            currentCategory={category}
+            currentSubCategory={subCategory}
           />
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="px-6 py-4 font-bold text-gray-500 uppercase tracking-wider text-xs">Pedido</th>
-                <th className="px-6 py-4 font-bold text-gray-500 uppercase tracking-wider text-xs">Cliente</th>
-                <th className="px-6 py-4 font-bold text-gray-500 uppercase tracking-wider text-xs">Fecha</th>
-                <th className="px-6 py-4 font-bold text-gray-500 uppercase tracking-wider text-xs">Total</th>
-                <th className="px-6 py-4 font-bold text-gray-500 uppercase tracking-wider text-xs">Estado</th>
-                <th className="px-6 py-4 font-bold text-gray-500 uppercase tracking-wider text-xs">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filteredOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-6 py-4 font-mono text-xs text-gray-500">
-                    #{order.id.slice(0, 8)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="font-bold text-gray-900">
-                      {order.guestInfo?.name || "Usuario Registrado"}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {order.guestInfo?.email || "Ver detalles"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-gray-600">
-                    {new Date(order.date).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 font-black text-gray-900">
-                    {formatPrice(order.total)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold",
-                      order.status === 'approved' ? "bg-green-100 text-green-700" :
-                      order.status === 'cancelled' ? "bg-red-100 text-red-700" :
-                      "bg-yellow-100 text-yellow-700"
-                    )}>
-                      {order.status === 'approved' && <CheckCircle className="h-3 w-3" />}
-                      {order.status === 'cancelled' && <XCircle className="h-3 w-3" />}
-                      {order.status === 'pending' && <Clock className="h-3 w-3" />}
-                      {order.status === 'approved' ? 'Aprobado' : order.status === 'cancelled' ? 'Cancelado' : 'Pendiente'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <select 
-                      value={order.status}
-                      onChange={(e) => handleStatusChange(order.id, e.target.value as Order['status'])}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 outline-none focus:border-indigo-500 cursor-pointer bg-white hover:bg-gray-50 transition-colors"
-                    >
-                      <option value="pending">Pendiente</option>
-                      <option value="approved">Aprobar</option>
-                      <option value="cancelled">Cancelar</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+        {/* Barra de Herramientas */}
+        <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
+          <span className="text-sm font-medium text-gray-500">
+            {totalItems} productos encontrados
+          </span>
+          <ProductFilters />
         </div>
-        {filteredOrders.length === 0 && (
-          <div className="p-10 text-center text-gray-400 text-sm">
-            No se encontraron pedidos.
+
+        {/* Grilla de Productos */}
+        {paginatedProducts.length > 0 ? (
+          <div className="grid grid-cols-1 gap-y-10 gap-x-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {paginatedProducts.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
           </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="rounded-full bg-gray-100 p-6 mb-4">
+              <ShoppingBag className="h-12 w-12 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">No se encontraron productos</h3>
+            <p className="text-gray-500 mt-2">Intenta limpiar los filtros o vuelve a cargar la página.</p>
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="mt-12"><Pagination totalPages={totalPages} /></div>
         )}
       </div>
     </div>

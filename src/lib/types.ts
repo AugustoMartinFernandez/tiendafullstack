@@ -1,3 +1,6 @@
+export const ORDER_STATUSES = ['pending', 'approved', 'cancelled'] as const;
+export type OrderStatus = typeof ORDER_STATUSES[number];
+
 export interface Product {
   id: string;
   name: string;
@@ -25,6 +28,8 @@ export interface UserProfile {
   createdAt: string;
   profilePhoto?: string;
   defaultAddress?: string;
+  dni?: string;
+  age?: number;
 }
 
 export interface Order {
@@ -32,11 +37,13 @@ export interface Order {
   userId: string | null; // Null para invitados
   date: string;
   total: number;
-  status: 'pending' | 'approved' | 'cancelled';
+  status: OrderStatus;
   items: Record<string, unknown>[];
   guestInfo?: { // Datos para contacto si es invitado
     email: string;
     name: string;
     phone: string;
   };
+  receiptUrl?: string;
+  receiptStatus?: string;
 }

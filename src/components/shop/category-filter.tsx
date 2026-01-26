@@ -9,13 +9,14 @@ import { PRODUCT_CATEGORIES } from "@/lib/constants";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface CategoryFilterProps {
+  allCategories?: string[];
   products?: Product[];
   currentCategory?: string;
   currentSubCategory?: string;
   isLoading?: boolean;
 }
 
-export function CategoryFilter({ products = [], currentCategory, currentSubCategory, isLoading }: CategoryFilterProps) {
+export function CategoryFilter({ allCategories = [], products = [], currentCategory, currentSubCategory, isLoading }: CategoryFilterProps) {
   const searchParams = useSearchParams();
 
   if (isLoading) {
@@ -52,6 +53,8 @@ export function CategoryFilter({ products = [], currentCategory, currentSubCateg
     return `?${params.toString()}`;
   };
 
+  const categoriesToDisplay = allCategories.length > 0 ? allCategories : PRODUCT_CATEGORIES;
+
   return (
     <div className="py-4 space-y-4 animate-in fade-in duration-500">
       {/* NIVEL 1: CATEGORÍAS PRINCIPALES (Desde Constante) */}
@@ -67,7 +70,7 @@ export function CategoryFilter({ products = [], currentCategory, currentSubCateg
         >
           Todos
         </Link>
-        {PRODUCT_CATEGORIES.map((cat) => (
+        {categoriesToDisplay.map((cat) => (
           <Link
             key={cat}
             href={createUrl(cat, undefined)}

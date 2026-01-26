@@ -1,17 +1,13 @@
 // src/lib/actions.ts
 "use server";
 
-import { db, storage } from "./firebase";
-import { 
-  doc, updateDoc, collection, addDoc, deleteDoc, getDoc, query, where, getDocs,
-  limit, startAfter, endBefore, limitToLast, orderBy, startAt, endAt, setDoc, arrayUnion, arrayRemove, writeBatch, getCountFromServer, DocumentSnapshot, QueryConstraint
-} from "firebase/firestore";
-import { ref, deleteObject } from "firebase/storage";
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { PRODUCT_CATEGORIES } from "@/lib/constants";
-import { Product } from "@/lib/types";
-import { requireAdmin } from "./auth-server";
+import { Product, ORDER_STATUSES, OrderStatus } from "@/lib/types";
+import { requireAdmin, requireUser } from "@/lib/auth-server";
+import { getAdminDb, getAdminStorage } from "@/lib/firebase-admin";
+import { FieldValue, DocumentSnapshot, Query } from "firebase-admin/firestore";
+import { productSchema } from "@/lib/schemas";
 
 // --- HELPER: MAPEO SEGURO DE FIRESTORE (TYPE-001) ---
 function mapFirestoreDocToProduct(doc: DocumentSnapshot): Product {
@@ -42,9 +38,9 @@ async function saveCustomCategory(category: string) {
   if (PRODUCT_CATEGORIES.includes(category as (typeof PRODUCT_CATEGORIES)[number])) return;
 
   try {
-    const settingsRef = doc(db, "settings", "categories");
-    // Usamos arrayUnion para agregar sin duplicar
-    await setDoc(settingsRef, { list: arrayUnion(category) }, { merge: true });
+    const dbAdmin = getAdminDb();
+    const settingsRef = dbAdmin.collection("settings").doc("categories");
+    await settingsRef.set({ list: FieldValue.arrayUnion(category) }, { merge: true });
   } catch (error) {
     console.error("Error guardando categoría:", error);
   }
@@ -54,8 +50,9 @@ async function saveCustomCategory(category: string) {
 async function saveCustomTags(tags: string[]) {
   if (!tags || tags.length === 0) return;
   try {
-    const settingsRef = doc(db, "settings", "tags");
-    await setDoc(settingsRef, { list: arrayUnion(...tags) }, { merge: true });
+    const dbAdmin = getAdminDb();
+    const settingsRef = dbAdmin.collection("settings").doc("tags");
+    await settingsRef.set({ list: FieldValue.arrayUnion(...tags) }, { merge: true });
   } catch (error) {
     console.error("Error guardando tags:", error);
   }
@@ -73,32 +70,6 @@ function generateAutoSku(name: string) {
   const random = Math.floor(1000 + Math.random() * 9000);
   return `${prefix}-${random}`;
 }
-
-const forbiddenWords = ["prohibido", "ofensivo", "spam", "groseria"];
-
-// --- ESQUEMA DE VALIDACIÓN (ZOD) ---
-const productSchema = z.object({
-  name: z.string().min(2, "El nombre debe tener al menos 2 caracteres."),
-  sku: z.string().optional(),
-  description: z.string().max(500, "La descripción no puede superar los 500 caracteres.").optional().refine((val) => {
-    if (!val) return true;
-    const lowerVal = val.toLowerCase();
-    return !forbiddenWords.some(word => lowerVal.includes(word));
-  }, { message: "La descripción contiene palabras prohibidas u ofensivas." }),
-  price: z.number().min(0, "El precio no puede ser negativo."),
-  originalPrice: z.number().min(0).optional(),
-  category: z.string().min(1, "La categoría es obligatoria."),
-  subCategory: z.string().optional(),
-  stock: z.number().int("El stock debe ser entero").min(0, "El stock no puede ser negativo.").max(1000, "El stock no puede ser mayor a 1000 unidades."),
-  tags: z.array(z.string()).optional(),
-  images: z.array(z.string()).min(1, "El producto debe tener al menos una imagen."),
-  attributes: z.record(z.string(), z.string()).optional(),
-}).refine((data) => {
-  if (data.originalPrice && data.originalPrice > 0) {
-    return data.originalPrice > data.price;
-  }
-  return true;
-}, { message: "El precio original debe ser mayor al precio de venta.", path: ["originalPrice"] });
 
 // --- NUEVA ACCIÓN: REVALIDAR TIENDA ---
 export async function revalidateStore() {
@@ -123,8 +94,9 @@ export async function updateHomeConfig(formData: FormData) {
   };
 
   try {
-    const docRef = doc(db, "settings", "home_config");
-    await updateDoc(docRef, heroData);
+    const dbAdmin = getAdminDb();
+    const docRef = dbAdmin.collection("settings").doc("home_config");
+    await docRef.update(heroData);
     revalidatePath("/");
     return { success: true, message: "¡Home actualizado correctamente!" };
   } catch (error) {
@@ -135,7 +107,11 @@ export async function updateHomeConfig(formData: FormData) {
 
 // --- ACCIÓN 2: CREAR PRODUCTO NUEVO ---
 export async function createProduct(formData: FormData) {
-  await requireAdmin();
+  try {
+    await requireAdmin();
+  } catch (error) {
+    return { success: false, message: "No tienes permisos de administrador." };
+  }
 
   // 1. Extraer atributos dinámicos
   const attributes: Record<string, string> = {};
@@ -162,8 +138,8 @@ export async function createProduct(formData: FormData) {
   }
 
   if (sku) {
-    const q = query(collection(db, "products"), where("sku", "==", sku));
-    const querySnapshot = await getDocs(q);
+    const dbAdmin = getAdminDb();
+    const querySnapshot = await dbAdmin.collection("products").where("sku", "==", sku).get();
     if (!querySnapshot.empty) {
       return { success: false, message: `El SKU "${sku}" ya está en uso por otro producto.` };
     }
@@ -205,10 +181,12 @@ export async function createProduct(formData: FormData) {
     // Guardamos los tags nuevos para sugerencias futuras
     if (validation.data.tags) await saveCustomTags(validation.data.tags);
 
-    await addDoc(collection(db, "products"), {
+    const dbAdmin = getAdminDb();
+    await dbAdmin.collection("products").add({
       ...validation.data,
       isVisible: true,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
 
     revalidatePath("/");
@@ -228,25 +206,36 @@ export async function deleteProduct(formData: FormData) {
 
   const id = formData.get("id") as string;
   try {
-    const docRef = doc(db, "products", id);
-    const docSnap = await getDoc(docRef);
+    const dbAdmin = getAdminDb();
+    const docRef = dbAdmin.collection("products").doc(id);
+    const docSnap = await docRef.get();
 
-    if (docSnap.exists()) {
-      const data = docSnap.data();
+    if (docSnap.exists) {
+      const data = docSnap.data() || {};
       
       const imagesToDelete: string[] = [];
       if (Array.isArray(data.images)) imagesToDelete.push(...data.images);
       if (data.imageUrl) imagesToDelete.push(data.imageUrl);
 
+      // Borrar imágenes usando Admin SDK Storage
+      const bucket = getAdminStorage().bucket();
+      
       await Promise.allSettled(
         imagesToDelete.map((url) => {
-          const fileRef = ref(storage, url);
-          return deleteObject(fileRef);
+          try {
+            // Extraer path de la URL de Firebase Storage
+            // Formato: .../o/products%2Fcat%2Ffile.jpg?alt=...
+            const urlObj = new URL(url);
+            const path = decodeURIComponent(urlObj.pathname.split('/o/')[1]);
+            return bucket.file(path).delete();
+          } catch {
+            return Promise.resolve();
+          }
         })
       );
     }
 
-    await deleteDoc(docRef);
+    await docRef.delete();
     
     revalidatePath("/");
     revalidatePath("/tienda");
@@ -265,7 +254,8 @@ export async function toggleProductVisibility(formData: FormData) {
   const currentStatus = formData.get("currentStatus") === "true";
   
   try {
-    await updateDoc(doc(db, "products", id), {
+    const dbAdmin = getAdminDb();
+    await dbAdmin.collection("products").doc(id).update({
       isVisible: !currentStatus 
     });
     revalidatePath("/");
@@ -283,15 +273,18 @@ export async function duplicateProduct(formData: FormData) {
   await requireAdmin();
   const id = formData.get("id") as string;
   try {
-    const originalRef = doc(db, "products", id);
-    const originalSnap = await getDoc(originalRef);
-    if (!originalSnap.exists()) return { success: false, message: "Producto no encontrado." };
+    const dbAdmin = getAdminDb();
+    const originalRef = dbAdmin.collection("products").doc(id);
+    const originalSnap = await originalRef.get();
     
-    const originalData = originalSnap.data();
-    await addDoc(collection(db, "products"), {
+    if (!originalSnap.exists) return { success: false, message: "Producto no encontrado." };
+    
+    const originalData = originalSnap.data() || {};
+    await dbAdmin.collection("products").add({
       ...originalData,
       name: `${originalData.name} (Copia)`,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
 
     revalidatePath("/");
@@ -334,9 +327,9 @@ export async function updateProduct(formData: FormData) {
   }
 
   if (sku) {
-    const q = query(collection(db, "products"), where("sku", "==", sku));
-    const querySnapshot = await getDocs(q);
-    const isDuplicate = querySnapshot.docs.some(doc => doc.id !== id);
+    const dbAdmin = getAdminDb();
+    const snapshot = await dbAdmin.collection("products").where("sku", "==", sku).get();
+    const isDuplicate = snapshot.docs.some(doc => doc.id !== id);
     if (isDuplicate) {
       return { success: false, message: `El SKU "${sku}" ya está en uso por otro producto.` };
     }
@@ -376,8 +369,9 @@ export async function updateProduct(formData: FormData) {
     // Guardamos los tags nuevos
     if (validation.data.tags) await saveCustomTags(validation.data.tags);
 
-    const docRef = doc(db, "products", id);
-    await updateDoc(docRef, validation.data);
+    const dbAdmin = getAdminDb();
+    const docRef = dbAdmin.collection("products").doc(id);
+    await docRef.update({ ...validation.data, updatedAt: new Date().toISOString() });
 
     revalidatePath("/");
     revalidatePath("/tienda");
@@ -394,10 +388,12 @@ export async function updateProduct(formData: FormData) {
 // --- ACCIÓN 7: OBTENER CONFIGURACIÓN DE TIENDA ---
 export async function getStoreConfig() {
   try {
-    const docRef = doc(db, "settings", "store_config");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return docSnap.data();
+    const dbAdmin = getAdminDb();
+    const docSnap = await dbAdmin.collection("settings").doc("store_config").get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      if (!data) return null;
+      return data;
     }
     return null;
   } catch {
@@ -411,14 +407,17 @@ export async function validateCartItems(items: { id: string; quantity: number }[
 
   try {
     // Consultamos todos los productos en paralelo para máxima velocidad
+    const dbAdmin = getAdminDb();
     const docsSnap = await Promise.all(
-      items.map((item) => getDoc(doc(db, "products", item.id)))
+      items.map((item) => dbAdmin.collection("products").doc(item.id).get())
     );
 
     const validatedItems = docsSnap
       .map((snap) => {
-        if (!snap.exists()) return null; // Si no existe, lo marcamos para borrar
+        if (!snap.exists) return null; // Si no existe, lo marcamos para borrar
         const data = snap.data();
+        
+        if (!data) return null;
         
         // Devolvemos solo los datos frescos necesarios para el carrito
         return {
@@ -446,8 +445,8 @@ export async function validateCartItems(items: { id: string; quantity: number }[
 // --- ACCIÓN 16: CONTAR TOTAL DE PRODUCTOS ---
 export async function getProductsCount() {
   try {
-    const coll = collection(db, "products");
-    const snapshot = await getCountFromServer(coll);
+    const dbAdmin = getAdminDb();
+    const snapshot = await dbAdmin.collection("products").count().get();
     return snapshot.data().count;
   } catch {
     return 0;
@@ -457,9 +456,9 @@ export async function getProductsCount() {
 // --- ACCIÓN 11: OBTENER TODAS LAS CATEGORÍAS (Fijas + Dinámicas) ---
 export async function getCategories() {
   try {
-    const docRef = doc(db, "settings", "categories");
-    const docSnap = await getDoc(docRef);
-    const customCategories = docSnap.exists() ? (docSnap.data().list || []) : [];
+    const dbAdmin = getAdminDb();
+    const docSnap = await dbAdmin.collection("settings").doc("categories").get();
+    const customCategories = docSnap.exists ? (docSnap.data()?.list || []) : [];
     
     // Unimos y ordenamos alfabéticamente
     const allCategories = Array.from(new Set([...PRODUCT_CATEGORIES, ...customCategories])).sort();
@@ -473,9 +472,9 @@ export async function getCategories() {
 // --- ACCIÓN 14: OBTENER TODOS LOS TAGS ---
 export async function getTags() {
   try {
-    const docRef = doc(db, "settings", "tags");
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? (docSnap.data().list || []) : [];
+    const dbAdmin = getAdminDb();
+    const docSnap = await dbAdmin.collection("settings").doc("tags").get();
+    return docSnap.exists ? (docSnap.data()?.list || []) : [];
   } catch {
     return [];
   }
@@ -485,9 +484,10 @@ export async function getTags() {
 export async function deleteCustomCategory(category: string) {
   await requireAdmin();
   try {
-    const settingsRef = doc(db, "settings", "categories");
-    await updateDoc(settingsRef, {
-      list: arrayRemove(category)
+    const dbAdmin = getAdminDb();
+    const settingsRef = dbAdmin.collection("settings").doc("categories");
+    await settingsRef.update({
+      list: FieldValue.arrayRemove(category)
     });
     revalidatePath("/admin/productos");
     return { success: true, message: "Categoría eliminada de la lista." };
@@ -504,24 +504,23 @@ export async function renameCustomCategory(oldName: string, newName: string) {
   if (oldName === newName) return { success: false, message: "El nombre es igual." };
 
   try {
-    const settingsRef = doc(db, "settings", "categories");
-    const batch = writeBatch(db);
+    const dbAdmin = getAdminDb();
+    const settingsRef = dbAdmin.collection("settings").doc("categories");
+    const batch = dbAdmin.batch();
 
     // 1. Actualizar lista de categorías (Quitamos la vieja)
-    // Nota: Hacemos update separado para asegurar atomicidad en la lista
-    await updateDoc(settingsRef, { list: arrayRemove(oldName) });
+    await settingsRef.update({ list: FieldValue.arrayRemove(oldName) });
     
     // Si la nueva NO es fija, la agregamos (si es fija, solo migramos productos)
     if (!PRODUCT_CATEGORIES.includes(newName as (typeof PRODUCT_CATEGORIES)[number])) {
-       await updateDoc(settingsRef, { list: arrayUnion(newName) });
+       await settingsRef.update({ list: FieldValue.arrayUnion(newName) });
     }
 
     // 2. Migrar productos en lote (Batch)
-    const q = query(collection(db, "products"), where("category", "==", oldName));
-    const snapshot = await getDocs(q);
+    const snapshot = await dbAdmin.collection("products").where("category", "==", oldName).get();
     
     snapshot.docs.forEach((doc) => {
-      batch.update(doc.ref, { category: newName });
+      batch.update(doc.ref, { category: newName, updatedAt: new Date().toISOString() });
     });
 
     await batch.commit();
@@ -542,33 +541,70 @@ export async function getStoreProducts(filters: {
   subCategory?: string; 
   tag?: string;
   search?: string;
+  minPrice?: number;
+  maxPrice?: number;
   limitCount?: number;
 } = {}) {
   try {
-    const productsRef = collection(db, "products");
-    const constraints: QueryConstraint[] = [where("isVisible", "==", true)];
-
-    // 1. Filtros Nativos de Firestore (Optimizan la lectura inicial)
-    if (filters.category) constraints.push(where("category", "==", filters.category));
-    if (filters.subCategory) constraints.push(where("subCategory", "==", filters.subCategory));
-    if (filters.tag) constraints.push(where("tags", "array-contains", filters.tag));
-
-    // 2. Ordenamiento Consistente
-    // Siempre ordenamos por fecha para asegurar que buscamos/mostramos lo más nuevo.
-    constraints.push(orderBy("createdAt", "desc"));
-
-    // 3. Límite Defensivo (FIX PERF-001)
-    // Si hay búsqueda, leemos un pool más grande (ej: 100) para filtrar en memoria.
-    // Si no hay búsqueda, respetamos el límite de paginación solicitado o un default.
-    const dbReadLimit = filters.search ? 100 : (filters.limitCount || 12);
-    constraints.push(limit(dbReadLimit));
-
-    const q = query(productsRef, ...constraints);
-    const snapshot = await getDocs(q);
+    const dbAdmin = getAdminDb();
     
-    let products = snapshot.docs.map(mapFirestoreDocToProduct);
+    // Definimos el límite de lectura
+    // Si limitCount es 0 o undefined, usamos un valor alto (ej: 200) para permitir paginación en memoria
+    const dbReadLimit = filters.limitCount || 200;
+    let products: Product[] = [];
 
-    // 4. Filtrado Profundo en Memoria (Solo sobre el pool limitado)
+    // ESTRATEGIA DE RECUPERACIÓN (FALLBACK)
+    // Intentamos la consulta optimizada. Si falla por falta de índice, usamos una consulta simple.
+    try {
+      let q = dbAdmin.collection("products").where("isVisible", "==", true);
+
+      // 1. Filtros Nativos
+      if (filters.category) q = q.where("category", "==", filters.category);
+      if (filters.subCategory) q = q.where("subCategory", "==", filters.subCategory);
+      if (filters.tag) q = q.where("tags", "array-contains", filters.tag);
+
+      // 2. Ordenamiento (Esto suele requerir índice compuesto)
+      q = q.orderBy("createdAt", "desc");
+      
+      q = q.limit(dbReadLimit);
+
+      const snapshot = await q.get();
+      products = snapshot.docs.map(mapFirestoreDocToProduct);
+
+    } catch (queryError: any) {
+      // Si el error es por falta de índice (FAILED_PRECONDITION), usamos Plan B
+      if (queryError.code === 9 || queryError.message?.includes("index")) {
+        console.warn("⚠️ Índice faltante en Firestore. Usando ordenamiento en memoria (Plan B).");
+        
+        // Plan B: Consulta simple sin ordenamiento compuesto
+        let q = dbAdmin.collection("products").where("isVisible", "==", true);
+        if (filters.category) q = q.where("category", "==", filters.category);
+        // Omitimos otros filtros complejos en DB para asegurar respuesta
+        q = q.limit(dbReadLimit);
+        
+        const snapshot = await q.get();
+        products = snapshot.docs.map(mapFirestoreDocToProduct);
+        
+        // Recuperamos las fechas reales del snapshot para ordenar correctamente
+        const docsMap = new Map(snapshot.docs.map(d => [d.id, d.data().createdAt]));
+
+        // Ordenamos manualmente en memoria (JavaScript)
+        products.sort((a, b) => {
+           const dateA = docsMap.get(a.id) || "1970-01-01";
+           const dateB = docsMap.get(b.id) || "1970-01-01";
+           return new Date(dateB).getTime() - new Date(dateA).getTime();
+        });
+      } else {
+        throw queryError; // Si es otro error (conexión, auth), lo lanzamos
+      }
+    }
+
+    // Asegurar filtrado de subcategoría (necesario si se usó Plan B)
+    if (filters.subCategory) {
+      products = products.filter(p => p.subCategory === filters.subCategory);
+    }
+
+    // 3. Filtrado Profundo en Memoria (Búsqueda de texto y Precios)
     if (filters.search) {
       const term = filters.search.toLowerCase().trim();
       
@@ -585,11 +621,19 @@ export async function getStoreProducts(filters: {
           (product.attributes && Object.values(product.attributes).some((v: string) => check(String(v))))
         );
       });
+    }
 
-      // Si se solicitó un límite de salida específico (ej: sugerencias), recortamos ahora
-      if (filters.limitCount) {
-        products = products.slice(0, filters.limitCount);
-      }
+    // Filtro de Precios
+    if (filters.minPrice !== undefined && filters.minPrice !== null) {
+      products = products.filter(p => p.price >= (filters.minPrice as number));
+    }
+    if (filters.maxPrice !== undefined && filters.maxPrice !== null) {
+      products = products.filter(p => p.price <= (filters.maxPrice as number));
+    }
+
+    // Si se solicitó un límite de salida específico (ej: sugerencias), recortamos ahora
+    if (filters.limitCount && products.length > filters.limitCount) {
+      products = products.slice(0, filters.limitCount);
     }
 
     return products;
@@ -608,58 +652,70 @@ export async function getAdminProducts(
   category?: string
 ) {
   try {
-    const productsRef = collection(db, "products");
-    let q;
+    const dbAdmin = getAdminDb();
+    let q: Query = dbAdmin.collection("products");
+    let needsInMemorySort = false;
 
     if (searchTerm) {
       // Búsqueda por nombre (Case sensitive en Firestore)
-      // Ignoramos paginación compleja en búsqueda para simplificar UX
-      const constraints: QueryConstraint[] = [
-        orderBy("name"),
-        startAt(searchTerm),
-        endAt(searchTerm + "\uf8ff"),
-        limit(50) // Límite de seguridad más amplio para búsquedas
-      ];
-      
-      if (category) {
-        constraints.unshift(where("category", "==", category));
-      }
-      
-      q = query(productsRef, ...constraints);
-    } else {
-      // Consulta base por fecha
-      const constraints: QueryConstraint[] = [orderBy("createdAt", "desc")];
+      // ESTRATEGIA: Priorizamos la búsqueda por índice 'name' y filtramos categoría en memoria
+      // Esto evita necesitar un índice compuesto (category + name)
+      q = q.orderBy("name")
+           .startAt(searchTerm)
+           .endAt(searchTerm + "\uf8ff")
+           .limit(50);
 
+      // Nota: No aplicamos .where("category") aquí para no romper el índice de búsqueda
+    } else {
+      // Sin búsqueda (Listado normal)
       if (category) {
-        constraints.unshift(where("category", "==", category));
+        // Si hay categoría, filtramos por ella pero QUITAMOS el ordenamiento por fecha
+        // Esto evita el error "The query requires an index" (category + createdAt)
+        q = q.where("category", "==", category);
+        needsInMemorySort = true; // Ordenaremos en JS
+      } else {
+        // Si no hay filtros, el ordenamiento por defecto funciona bien con el índice nativo
+        q = q.orderBy("createdAt", "desc");
       }
 
       if (cursorId) {
-        const cursorDocRef = doc(db, "products", cursorId);
-        const cursorSnap = await getDoc(cursorDocRef);
+        const cursorSnap = await dbAdmin.collection("products").doc(cursorId).get();
 
-        if (cursorSnap.exists()) {
+        if (cursorSnap.exists) {
           if (direction === 'next') {
-            constraints.push(startAfter(cursorSnap));
-            constraints.push(limit(20));
+            q = q.startAfter(cursorSnap).limit(20);
           } else {
             // Para ir atrás, buscamos los que terminan antes del cursor actual
-            constraints.push(endBefore(cursorSnap));
-            constraints.push(limitToLast(20));
+            q = q.endBefore(cursorSnap).limitToLast(20);
           }
         } else {
-           constraints.push(limit(20)); // Fallback si el cursor no existe
+           q = q.limit(20); // Fallback si el cursor no existe
         }
       } else {
-        constraints.push(limit(20));
+        q = q.limit(20);
       }
-      
-      q = query(productsRef, ...constraints);
     }
 
-    const snapshot = await getDocs(q);
+    const snapshot = await q.get();
     // Mapeamos los datos
-    const products = snapshot.docs.map(mapFirestoreDocToProduct);
+    let products = snapshot.docs.map(mapFirestoreDocToProduct);
+
+    // 1. FILTRADO EN MEMORIA (Solo si hay búsqueda + categoría)
+    if (searchTerm && category) {
+      products = products.filter(p => p.category === category);
+    }
+
+    // 2. ORDENAMIENTO EN MEMORIA (Solo si filtramos por categoría sin búsqueda)
+    if (needsInMemorySort) {
+      // Recuperamos la fecha del snapshot original ya que mapFirestoreDocToProduct no siempre la trae
+      const docsMap = new Map(snapshot.docs.map(d => [d.id, d.data().createdAt]));
+      
+      products.sort((a, b) => {
+        const dateA = docsMap.get(a.id) || "";
+        const dateB = docsMap.get(b.id) || "";
+        return dateB.localeCompare(dateA); // Descendente (más nuevo primero)
+      });
+    }
 
     return {
       products,
@@ -678,13 +734,14 @@ export async function validateFavorites(ids: string[]) {
 
   try {
     // Consultamos en paralelo para verificar existencia
+    const dbAdmin = getAdminDb();
     const docsSnap = await Promise.all(
-      ids.map((id) => getDoc(doc(db, "products", id)))
+      ids.map((id) => dbAdmin.collection("products").doc(id).get())
     );
 
     const validProducts = docsSnap
       .map((snap) => {
-        if (!snap.exists()) return null;
+        if (!snap.exists) return null;
         return mapFirestoreDocToProduct(snap);
       })
       .filter((p): p is Product => p !== null);
@@ -692,6 +749,103 @@ export async function validateFavorites(ids: string[]) {
     return validProducts;
   } catch (error) {
     console.error("Error validando favoritos:", error);
+    return [];
+  }
+}
+
+// --- ACCIÓN 17: ACTUALIZAR ESTADO DE PEDIDO (Admin) ---
+export async function updateOrderStatus(orderId: string, status: string) {
+  const claims = await requireAdmin();
+  const email = claims.email || "unknown";
+
+  if (!ORDER_STATUSES.includes(status as OrderStatus)) {
+    return { success: false, message: "Estado inválido." };
+  }
+  const newStatus = status as OrderStatus;
+
+  try {
+    const dbAdmin = getAdminDb();
+    const orderRef = dbAdmin.collection("orders").doc(orderId);
+    const orderSnap = await orderRef.get();
+
+    if (!orderSnap.exists) {
+      return { success: false, message: "El pedido no existe." };
+    }
+
+    const currentStatus = orderSnap.data()?.status as OrderStatus;
+
+    // Validar transiciones: Solo se puede cambiar si está pendiente (o lógica que prefieras)
+    if (currentStatus === 'approved' || currentStatus === 'cancelled') {
+      return { success: false, message: `No se puede modificar un pedido con estado ${currentStatus}.` };
+    }
+
+    await orderRef.update({ 
+      status: newStatus,
+      updatedAt: new Date().toISOString(),
+      updatedBy: email
+    });
+    revalidatePath("/admin/ventas");
+    return { success: true, message: "Estado actualizado." };
+  } catch (error) {
+    console.error("Error updating order status:", error);
+    return { success: false, message: error instanceof Error ? error.message : "Error al actualizar estado." };
+  }
+}
+
+// --- ACCIÓN 18: SUBIR COMPROBANTE (Usuario) ---
+export async function submitReceipt(orderId: string, fileUrl: string) {
+  const user = await requireUser();
+  if (!user) return { success: false, message: "Debes iniciar sesión." };
+
+  try {
+    const dbAdmin = getAdminDb();
+    const orderRef = dbAdmin.collection("orders").doc(orderId);
+    const orderSnap = await orderRef.get();
+
+    if (!orderSnap.exists) return { success: false, message: "Pedido no encontrado." };
+    
+    const orderData = orderSnap.data();
+    // Validación de seguridad: Solo el dueño puede subir comprobante
+    if (orderData?.userId !== user.uid) {
+        return { success: false, message: "No tienes permiso para editar este pedido." };
+    }
+
+    await orderRef.update({
+        receiptUrl: fileUrl,
+        receiptStatus: "reviewing", // Estado inicial para revisión
+        updatedAt: new Date().toISOString()
+    });
+
+    revalidatePath("/perfil");
+    revalidatePath("/mis-pedidos");
+    return { success: true, message: "Comprobante subido correctamente." };
+  } catch (error) {
+    console.error("Error submitting receipt:", error);
+    return { success: false, message: "Error al subir comprobante." };
+  }
+}
+
+// --- ACCIÓN 19: OBTENER PEDIDOS DE USUARIO (Server Side) ---
+export async function getUserOrdersServer() {
+  const user = await requireUser();
+  if (!user) return [];
+
+  try {
+    const dbAdmin = getAdminDb();
+    const q = dbAdmin.collection("orders")
+      .where("userId", "==", user.uid);
+      // .orderBy("date", "desc"); // REMOVIDO: Evita error de índice. Ordenamos en memoria.
+    
+    const snapshot = await q.get();
+    const orders = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Ordenar en memoria: más reciente primero
+    return orders.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  } catch (error) {
+    console.error("Error fetching user orders:", error);
     return [];
   }
 }

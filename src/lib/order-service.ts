@@ -1,5 +1,5 @@
 import { db } from "@/lib/firebase";
-import { collection, addDoc, query, orderBy, getDocs, doc, updateDoc, where } from "firebase/firestore";
+import { collection, addDoc, query, orderBy, getDocs, where } from "firebase/firestore";
 import { Order } from "@/lib/types";
 
 // Omitimos 'id' porque Firestore lo genera
@@ -37,18 +37,6 @@ export async function getAllOrders() {
   } catch (error) {
     console.error("Error getting all orders:", error);
     return [];
-  }
-}
-
-// --- ADMIN: Actualizar estado ---
-export async function updateOrderStatus(orderId: string, status: Order['status']) {
-  try {
-    const orderRef = doc(db, "orders", orderId);
-    await updateDoc(orderRef, { status });
-    return { success: true };
-  } catch (error) {
-    console.error("Error updating order status:", error);
-    return { success: false, error };
   }
 }
 
