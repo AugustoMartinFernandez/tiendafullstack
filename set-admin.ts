@@ -1,4 +1,4 @@
-import { getAdminAuth } from "../src/lib/firebase-admin";
+import { getAdminAuth } from "./src/lib/firebase-admin";
 import * as dotenv from "dotenv";
 
 // Cargar variables de entorno locales

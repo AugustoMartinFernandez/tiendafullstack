@@ -1,5 +1,14 @@
 import { db } from "@/lib/firebase";
-import { collection, addDoc, query, orderBy, getDocs, where } from "firebase/firestore";
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  orderBy, 
+  getDocs, 
+  where, 
+  doc,        // <--- Faltaba esto
+  updateDoc   // <--- Faltaba esto
+} from "firebase/firestore";
 import { Order } from "@/lib/types";
 
 // Omitimos 'id' porque Firestore lo genera
@@ -46,4 +55,19 @@ export async function getUserOrders(userId: string) {
   const q = query(ordersRef, where("userId", "==", userId), orderBy("createdAt", "desc"));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+}
+
+// --- NUEVO: Actualizar Estado (Lo que faltaba) ---
+export async function updateOrderStatus(orderId: string, status: string) {
+  try {
+    const orderRef = doc(db, "orders", orderId);
+    await updateDoc(orderRef, { 
+      status: status,
+      updatedAt: new Date().toISOString() // Opcional: para saber cuándo cambió
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Error actualizando estado:", error);
+    return { success: false };
+  }
 }

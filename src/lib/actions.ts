@@ -9,6 +9,8 @@ import { getAdminDb, getAdminStorage } from "@/lib/firebase-admin";
 import { FieldValue, DocumentSnapshot, Query } from "firebase-admin/firestore";
 import { productSchema } from "@/lib/schemas";
 
+
+
 // --- HELPER: MAPEO SEGURO DE FIRESTORE (TYPE-001) ---
 function mapFirestoreDocToProduct(doc: DocumentSnapshot): Product {
   const data = doc.data();

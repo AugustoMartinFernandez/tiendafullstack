@@ -2,10 +2,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb, getAdminStorage } from "@/lib/firebase-admin";
 import { requireAdmin } from "@/lib/auth-server";
-import { productSchema } from "@/lib/actions";
+import { productSchema } from "@/lib/schemas";
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { PRODUCT_CATEGORIES } from "@/lib/constants";
+
+
 
 // Helper para generar SKU (Replicado para la API)
 function generateAutoSku(name: string) {
