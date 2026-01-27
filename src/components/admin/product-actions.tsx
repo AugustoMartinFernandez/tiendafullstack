@@ -2,7 +2,7 @@
 
 import { MoreHorizontal, Trash2, Copy, Eye, EyeOff, Edit } from "lucide-react";
 import { useState } from "react";
-import { revalidateStore } from "@/lib/actions";
+import { revalidateStore } from "@/lib/actions/settings";
 import { deleteProductClient, duplicateProductClient, toggleProductVisibilityClient } from "@/lib/client-actions";
 
 interface ProductActionsProps {

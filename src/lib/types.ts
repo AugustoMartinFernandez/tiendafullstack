@@ -1,49 +1,65 @@
-export const ORDER_STATUSES = ['pending', 'approved', 'cancelled'] as const;
+export const ORDER_STATUSES = ['pending', 'payment_review', 'approved', 'shipped', 'cancelled'] as const;
 export type OrderStatus = typeof ORDER_STATUSES[number];
+export type PaymentStatus = 'unpaid' | 'partial' | 'paid';
+
+export interface PaymentTransaction {
+  id: string;
+  amount: number;
+  date: string;
+  note?: string;
+  recordedBy: string;
+}
 
 export interface Product {
   id: string;
   name: string;
   sku?: string;
   price: number;
-  originalPrice?: number; // <--- AGREGAR ESTO (El signo ? es porque es opcional)
-  images: string[]; 
-  /** @deprecated Usar getProductImage() o getProductImages() en su lugar */
+  originalPrice?: number;
+  images: string[];
   imageUrl?: string;
   category: string;
-  subCategory?: string; // Nueva jerarquía
-  tags?: string[]; // Sistema de etiquetas
+  subCategory?: string;
+  tags?: string[];
   stock: number;
-  attributes?: Record<string, string>; 
+  attributes?: Record<string, string>;
   isVisible?: boolean;
   description?: string;
 }
 
-export interface UserProfile {
-  uid: string;
-  email: string;
-  displayName: string;
-  phone?: string;
-  role: 'customer' | 'admin';
-  createdAt: string;
-  profilePhoto?: string;
-  defaultAddress?: string;
-  dni?: string;
-  age?: number;
+export interface CartItem extends Product {
+  quantity: number;
+}
+
+export interface OrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  imageUrl?: string;
+  sku?: string;
 }
 
 export interface Order {
   id: string;
-  userId: string | null; // Null para invitados
-  date: string;
+  userId: string | null;
+  createdAt: string;
   total: number;
   status: OrderStatus;
-  items: Record<string, unknown>[];
-  guestInfo?: { // Datos para contacto si es invitado
+  items: OrderItem[];
+  guestInfo?: {
     email: string;
     name: string;
     phone: string;
+    address: string;
+    notes?: string;
   };
-  receiptUrl?: string;
-  receiptStatus?: string;
+  // Campos Financieros y de Auditoría
+  paymentProofUrl?: string;
+  paymentProofType?: 'image' | 'pdf';
+  adminNote?: string;
+  amountPaid: number;      // Obligatorio para cuenta corriente
+  balance: number;         // Obligatorio: total - amountPaid
+  paymentStatus: PaymentStatus;
+  payments?: PaymentTransaction[];
 }

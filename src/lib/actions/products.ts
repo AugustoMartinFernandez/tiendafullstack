@@ -1,15 +1,12 @@
-// src/lib/actions.ts
 "use server";
 
 import { revalidatePath } from "next/cache";
 import { PRODUCT_CATEGORIES } from "@/lib/constants";
-import { Product, ORDER_STATUSES, OrderStatus } from "@/lib/types";
-import { requireAdmin, requireUser } from "@/lib/auth-server";
+import { Product } from "@/lib/types";
+import { requireAdmin } from "@/lib/auth-server";
 import { getAdminDb, getAdminStorage } from "@/lib/firebase-admin";
 import { FieldValue, DocumentSnapshot, Query } from "firebase-admin/firestore";
 import { productSchema } from "@/lib/schemas";
-
-
 
 // --- HELPER: MAPEO SEGURO DE FIRESTORE (TYPE-001) ---
 function mapFirestoreDocToProduct(doc: DocumentSnapshot): Product {
@@ -71,40 +68,6 @@ function generateAutoSku(name: string) {
   const prefix = cleanName.substring(0, 6) || "PROD";
   const random = Math.floor(1000 + Math.random() * 9000);
   return `${prefix}-${random}`;
-}
-
-// --- NUEVA ACCIÓN: REVALIDAR TIENDA ---
-export async function revalidateStore() {
-  revalidatePath("/");
-  revalidatePath("/tienda");
-  revalidatePath("/admin/productos");
-}
-
-// --- ACCIÓN 1: ACTUALIZAR EL HOME (Admin) ---
-export async function updateHomeConfig(formData: FormData) {
-  await requireAdmin();
-  
-  const heroData = {
-    hero: {
-      title: formData.get("title") as string,
-      subtitle: formData.get("subtitle") as string,
-      badgeText: formData.get("badgeText") as string,
-      buttonText: formData.get("buttonText") as string,
-      buttonUrl: formData.get("buttonUrl") as string,
-      imageUrl: formData.get("imageUrl") as string,
-    },
-  };
-
-  try {
-    const dbAdmin = getAdminDb();
-    const docRef = dbAdmin.collection("settings").doc("home_config");
-    await docRef.update(heroData);
-    revalidatePath("/");
-    return { success: true, message: "¡Home actualizado correctamente!" };
-  } catch (error) {
-    console.error("Error guardando Home:", error);
-    return { success: false, message: "Error al guardar configuración del Home." };
-  }
 }
 
 // --- ACCIÓN 2: CREAR PRODUCTO NUEVO ---
@@ -387,63 +350,6 @@ export async function updateProduct(formData: FormData) {
   }
 }
 
-// --- ACCIÓN 7: OBTENER CONFIGURACIÓN DE TIENDA ---
-export async function getStoreConfig() {
-  try {
-    const dbAdmin = getAdminDb();
-    const docSnap = await dbAdmin.collection("settings").doc("store_config").get();
-    if (docSnap.exists) {
-      const data = docSnap.data();
-      if (!data) return null;
-      return data;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// --- ACCIÓN 8: VALIDAR CARRITO (Sanitización de Precios y Stock) ---
-export async function validateCartItems(items: { id: string; quantity: number }[]) {
-  if (!items || items.length === 0) return [];
-
-  try {
-    // Consultamos todos los productos en paralelo para máxima velocidad
-    const dbAdmin = getAdminDb();
-    const docsSnap = await Promise.all(
-      items.map((item) => dbAdmin.collection("products").doc(item.id).get())
-    );
-
-    const validatedItems = docsSnap
-      .map((snap) => {
-        if (!snap.exists) return null; // Si no existe, lo marcamos para borrar
-        const data = snap.data();
-        
-        if (!data) return null;
-        
-        // Devolvemos solo los datos frescos necesarios para el carrito
-        return {
-          id: snap.id,
-          name: data.name,
-          price: data.price,
-          originalPrice: data.originalPrice || 0,
-          images: data.images || [],
-          imageUrl: data.imageUrl || "",
-          stock: data.stock,
-          category: data.category,
-          sku: data.sku,
-          attributes: data.attributes || {},
-        };
-      })
-      .filter((item) => item !== null); // Filtramos los nulos (eliminados)
-
-    return validatedItems;
-  } catch (error) {
-    console.error("Error validando carrito:", error);
-    return [];
-  }
-}
-
 // --- ACCIÓN 16: CONTAR TOTAL DE PRODUCTOS ---
 export async function getProductsCount() {
   try {
@@ -452,88 +358,6 @@ export async function getProductsCount() {
     return snapshot.data().count;
   } catch {
     return 0;
-  }
-}
-
-// --- ACCIÓN 11: OBTENER TODAS LAS CATEGORÍAS (Fijas + Dinámicas) ---
-export async function getCategories() {
-  try {
-    const dbAdmin = getAdminDb();
-    const docSnap = await dbAdmin.collection("settings").doc("categories").get();
-    const customCategories = docSnap.exists ? (docSnap.data()?.list || []) : [];
-    
-    // Unimos y ordenamos alfabéticamente
-    const allCategories = Array.from(new Set([...PRODUCT_CATEGORIES, ...customCategories])).sort();
-    return allCategories;
-  } catch (error) {
-    console.error("Error fetching categories:", error);
-    return [...PRODUCT_CATEGORIES];
-  }
-}
-
-// --- ACCIÓN 14: OBTENER TODOS LOS TAGS ---
-export async function getTags() {
-  try {
-    const dbAdmin = getAdminDb();
-    const docSnap = await dbAdmin.collection("settings").doc("tags").get();
-    return docSnap.exists ? (docSnap.data()?.list || []) : [];
-  } catch {
-    return [];
-  }
-}
-
-// --- ACCIÓN 12: ELIMINAR CATEGORÍA CUSTOM ---
-export async function deleteCustomCategory(category: string) {
-  await requireAdmin();
-  try {
-    const dbAdmin = getAdminDb();
-    const settingsRef = dbAdmin.collection("settings").doc("categories");
-    await settingsRef.update({
-      list: FieldValue.arrayRemove(category)
-    });
-    revalidatePath("/admin/productos");
-    return { success: true, message: "Categoría eliminada de la lista." };
-  } catch {
-    return { success: false, message: "Error al eliminar categoría." };
-  }
-}
-
-// --- ACCIÓN 13: RENOMBRAR CATEGORÍA (Y MIGRAR PRODUCTOS) ---
-export async function renameCustomCategory(oldName: string, newName: string) {
-  await requireAdmin();
-  
-  if (!newName.trim()) return { success: false, message: "El nombre no puede estar vacío." };
-  if (oldName === newName) return { success: false, message: "El nombre es igual." };
-
-  try {
-    const dbAdmin = getAdminDb();
-    const settingsRef = dbAdmin.collection("settings").doc("categories");
-    const batch = dbAdmin.batch();
-
-    // 1. Actualizar lista de categorías (Quitamos la vieja)
-    await settingsRef.update({ list: FieldValue.arrayRemove(oldName) });
-    
-    // Si la nueva NO es fija, la agregamos (si es fija, solo migramos productos)
-    if (!PRODUCT_CATEGORIES.includes(newName as (typeof PRODUCT_CATEGORIES)[number])) {
-       await settingsRef.update({ list: FieldValue.arrayUnion(newName) });
-    }
-
-    // 2. Migrar productos en lote (Batch)
-    const snapshot = await dbAdmin.collection("products").where("category", "==", oldName).get();
-    
-    snapshot.docs.forEach((doc) => {
-      batch.update(doc.ref, { category: newName, updatedAt: new Date().toISOString() });
-    });
-
-    await batch.commit();
-
-    revalidatePath("/admin/productos");
-    revalidatePath("/tienda");
-    
-    return { success: true, message: `Categoría renombrada y ${snapshot.size} productos migrados.` };
-  } catch (error) {
-    console.error(error);
-    return { success: false, message: "Error al renombrar." };
   }
 }
 
@@ -751,103 +575,6 @@ export async function validateFavorites(ids: string[]) {
     return validProducts;
   } catch (error) {
     console.error("Error validando favoritos:", error);
-    return [];
-  }
-}
-
-// --- ACCIÓN 17: ACTUALIZAR ESTADO DE PEDIDO (Admin) ---
-export async function updateOrderStatus(orderId: string, status: string) {
-  const claims = await requireAdmin();
-  const email = claims.email || "unknown";
-
-  if (!ORDER_STATUSES.includes(status as OrderStatus)) {
-    return { success: false, message: "Estado inválido." };
-  }
-  const newStatus = status as OrderStatus;
-
-  try {
-    const dbAdmin = getAdminDb();
-    const orderRef = dbAdmin.collection("orders").doc(orderId);
-    const orderSnap = await orderRef.get();
-
-    if (!orderSnap.exists) {
-      return { success: false, message: "El pedido no existe." };
-    }
-
-    const currentStatus = orderSnap.data()?.status as OrderStatus;
-
-    // Validar transiciones: Solo se puede cambiar si está pendiente (o lógica que prefieras)
-    if (currentStatus === 'approved' || currentStatus === 'cancelled') {
-      return { success: false, message: `No se puede modificar un pedido con estado ${currentStatus}.` };
-    }
-
-    await orderRef.update({ 
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-      updatedBy: email
-    });
-    revalidatePath("/admin/ventas");
-    return { success: true, message: "Estado actualizado." };
-  } catch (error) {
-    console.error("Error updating order status:", error);
-    return { success: false, message: error instanceof Error ? error.message : "Error al actualizar estado." };
-  }
-}
-
-// --- ACCIÓN 18: SUBIR COMPROBANTE (Usuario) ---
-export async function submitReceipt(orderId: string, fileUrl: string) {
-  const user = await requireUser();
-  if (!user) return { success: false, message: "Debes iniciar sesión." };
-
-  try {
-    const dbAdmin = getAdminDb();
-    const orderRef = dbAdmin.collection("orders").doc(orderId);
-    const orderSnap = await orderRef.get();
-
-    if (!orderSnap.exists) return { success: false, message: "Pedido no encontrado." };
-    
-    const orderData = orderSnap.data();
-    // Validación de seguridad: Solo el dueño puede subir comprobante
-    if (orderData?.userId !== user.uid) {
-        return { success: false, message: "No tienes permiso para editar este pedido." };
-    }
-
-    await orderRef.update({
-        receiptUrl: fileUrl,
-        receiptStatus: "reviewing", // Estado inicial para revisión
-        updatedAt: new Date().toISOString()
-    });
-
-    revalidatePath("/perfil");
-    revalidatePath("/mis-pedidos");
-    return { success: true, message: "Comprobante subido correctamente." };
-  } catch (error) {
-    console.error("Error submitting receipt:", error);
-    return { success: false, message: "Error al subir comprobante." };
-  }
-}
-
-// --- ACCIÓN 19: OBTENER PEDIDOS DE USUARIO (Server Side) ---
-export async function getUserOrdersServer() {
-  const user = await requireUser();
-  if (!user) return [];
-
-  try {
-    const dbAdmin = getAdminDb();
-    const q = dbAdmin.collection("orders")
-      .where("userId", "==", user.uid);
-      // .orderBy("date", "desc"); // REMOVIDO: Evita error de índice. Ordenamos en memoria.
-    
-    const snapshot = await q.get();
-    const orders = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    // Ordenar en memoria: más reciente primero
-    return orders.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  } catch (error) {
-    console.error("Error fetching user orders:", error);
     return [];
   }
 }

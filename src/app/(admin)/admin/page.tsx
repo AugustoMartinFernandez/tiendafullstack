@@ -1,5 +1,5 @@
 import { getHomeConfig } from "@/lib/db";
-import { updateHomeConfig } from "@/lib/actions";
+import { updateHomeConfig } from "@/lib/actions/settings";
 
 export default async function AdminPage() {
   // 1. Leemos la configuración actual para mostrarla en el formulario

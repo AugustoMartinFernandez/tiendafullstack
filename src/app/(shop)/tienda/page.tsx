@@ -1,4 +1,5 @@
-import { getStoreProducts, getCategories } from "@/lib/actions";
+import { getStoreProducts } from "@/lib/actions/products";
+import { getCategories, getTags } from "@/lib/actions/settings";
 import { ProductCard } from "@/components/shop/product-card";
 import { ProductFilters } from "@/components/shop/product-filters";
 import { CategoryFilter } from "@/components/shop/category-filter";
@@ -56,7 +57,7 @@ export default async function TiendaPage({
       </div>
 
       {/* Filtros de Categoría */}
-      <div className="sticky top-[60px] md:top-[72px] z-30 bg-white/80 backdrop-blur-md border-b border-gray-200">
+      <div className="sticky top-15 md:top-18 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <CategoryFilter 
             allCategories={allCategories}

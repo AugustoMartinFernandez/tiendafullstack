@@ -1,6 +1,8 @@
 "use client";
-
-import { getCategories, getTags, revalidateStore, updateProduct } from "@/lib/actions";
+// Acciones específicas de Productos
+import { updateProduct } from "@/lib/actions/products";
+// Acciones de Configuración y Utilidades
+import { getCategories, getTags, revalidateStore } from "@/lib/actions/settings";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Product } from "@/lib/types";

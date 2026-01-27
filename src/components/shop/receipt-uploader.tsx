@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
-import { submitReceipt } from "@/lib/actions";
+import { submitReceipt } from "@/lib/actions/orders";
 import { Loader2, Upload, Check, AlertCircle } from "lucide-react";
 import { Toast, ToastType } from "@/components/ui/toast";
 

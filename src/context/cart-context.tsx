@@ -1,13 +1,10 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { Product } from "@/lib/types";
-import { auth } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
-
-export interface CartItem extends Product {
-  quantity: number;
-}
+import { createContext, useContext, useEffect, useState, ReactNode, useRef } from "react";
+import { useDebouncedCallback } from "use-debounce";
+import { Product, CartItem } from "@/lib/types";
+import { useAuth } from "./auth-context";
+import { getUserCart, saveUserCart, mergeCarts } from "@/lib/cart-service";
 
 interface CartContextType {
   items: CartItem[];
@@ -20,40 +17,89 @@ interface CartContextType {
   closeCart: () => void;
   totalItems: number;
   totalPrice: number;
+  isLoaded: boolean;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>(() => {
-    if (typeof window === 'undefined') return [];
+  const [items, setItems] = useState<CartItem[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const { user, loading: authLoading } = useAuth();
+  const prevUserRef = useRef<string | null>(null);
+
+  // 1. Cargar del localStorage al iniciar en el cliente para evitar hydration errors
+  useEffect(() => {
     try {
       const saved = localStorage.getItem("cart");
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-  const [isLoaded] = useState(() => typeof window !== 'undefined');
-  const [isCartOpen, setIsCartOpen] = useState(false);
-
-  // 1. Cargar del localStorage al iniciar (Eliminado por lazy init)
-
-  // 1.5 Sincronización básica al loguearse (Placeholder para lógica futura de Firestore)
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user && isLoaded) {
-        // Aquí iría la lógica para leer el carrito de Firestore y fusionarlo
-        // Por ahora, mantenemos el de localStorage que es el comportamiento "Soft Login" deseado
+      if (saved) {
+        const parsedItems = JSON.parse(saved);
+        if (Array.isArray(parsedItems)) {
+          setItems(parsedItems);
+        }
       }
-    });
-    return () => unsubscribe();
-  }, [isLoaded]);
+    } catch (e) {
+      console.error("Failed to load cart from localStorage", e);
+    } finally {
+      setIsLoaded(true);
+    }
+  }, []);
+  
+  // 2. Sincronizar con Firestore al iniciar sesión Y limpiar al cerrar sesión
+  useEffect(() => {
+    if (authLoading || !isLoaded) return;
 
-  // 2. Guardar en localStorage cada vez que cambia el carrito
+    const currentUserId = user?.uid || null;
+    const prevUserId = prevUserRef.current;
+
+    // Caso 1: Login (o carga inicial con sesión) - Sincronizar
+    if (currentUserId && currentUserId !== prevUserId) {
+      const syncCarts = async () => {
+        const remoteCart = await getUserCart(currentUserId);
+        const localCart = items;
+        if (remoteCart.length > 0 || localCart.length > 0) {
+          const mergedCart = mergeCarts(localCart, remoteCart);
+          setItems(mergedCart);
+        }
+      };
+      syncCarts();
+    }
+
+    // Caso 2: Logout - Limpiar carrito
+    if (prevUserId && !currentUserId) {
+      setItems([]);
+      localStorage.removeItem("cart");
+    }
+
+    prevUserRef.current = currentUserId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading, isLoaded]);
+
+  // 3. Debounce para guardar en Firestore y no sobrecargarlo en cada cambio
+  const debouncedSaveCart = useDebouncedCallback(
+    async (userId: string, cartItems: CartItem[]) => {
+      try {
+        await saveUserCart(userId, cartItems);
+      } catch (error) {
+        console.error("Error al guardar el carrito en Firestore:", error);
+      }
+    },
+    1500 // Espera 1.5 segundos después del último cambio para guardar
+  );
+
+  // 4. Guardar en localStorage (y Firestore si está logueado) cada vez que cambia el carrito
   useEffect(() => {
     if (isLoaded) {
+      // Siempre guarda en localStorage para acceso offline y para invitados
       localStorage.setItem("cart", JSON.stringify(items));
+
+      // Si el usuario está logueado, también guarda en Firestore
+      if (user) {
+        debouncedSaveCart(user.uid, items);
+      }
     }
-  }, [items, isLoaded]);
+  }, [items, isLoaded, user, debouncedSaveCart]);
 
   const openCart = () => setIsCartOpen(true);
   const closeCart = () => setIsCartOpen(false);
@@ -107,6 +153,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         isCartOpen,
         openCart,
         closeCart,
+        isLoaded,
       }}
     >
       {children}

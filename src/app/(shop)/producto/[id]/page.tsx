@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
 import { ProductGallery } from "@/components/shop/product-gallery"; // Ya lo vamos a crear
 import { AddToCart } from "@/components/shop/add-to-cart";
 import { FavoriteButton, ShareButton } from "@/components/shop/product-interactions";
-import { getStoreConfig } from "@/lib/actions";
+import { getStoreProducts } from "@/lib/actions/products";
+import { getStoreConfig, getCategories } from "@/lib/actions/settings";
 import { formatPrice } from "@/lib/format";
 
 // 1. OBTENCIÓN DE DATOS (Server Side)

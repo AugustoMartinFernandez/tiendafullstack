@@ -25,3 +25,18 @@ export const productSchema = z.object({
   }
   return true;
 }, { message: "El precio original debe ser mayor al precio de venta.", path: ["originalPrice"] });
+
+export const orderSchema = z.object({
+  userId: z.string().nullable().optional(),
+  userInfo: z.object({
+    name: z.string().min(2, "El nombre es obligatorio"),
+    phone: z.string().min(6, "El teléfono es obligatorio"),
+    address: z.string().min(5, "La dirección es obligatoria"),
+    notes: z.string().optional(),
+    email: z.string().email("Email inválido").optional().or(z.literal("")),
+  }),
+  items: z.array(z.object({
+    id: z.string(),
+    quantity: z.number().int().positive(),
+  })).min(1, "El carrito está vacío"),
+});

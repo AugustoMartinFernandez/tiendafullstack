@@ -1,4 +1,5 @@
-import { getAdminProducts, getProductsCount, getCategories } from "@/lib/actions";
+import { getAdminProducts, getProductsCount } from "@/lib/actions/products";
+import { getCategories } from "@/lib/actions/settings";
 import { ProductRow } from "@/components/admin/product-row";
 import { AdminCategorySelector } from "@/components/admin/admin-category-selector";
 import Link from "next/link";

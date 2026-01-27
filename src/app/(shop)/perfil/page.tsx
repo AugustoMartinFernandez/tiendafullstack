@@ -9,7 +9,7 @@ import { deleteUser, GoogleAuthProvider, EmailAuthProvider } from "firebase/auth
 import { useRouter } from "next/navigation";
 import { UserGuard } from "@/components/auth/user-guard";
 import { useEffect, useState } from "react";
-import { getUserOrders } from "@/lib/order-service";
+import { getUserOrders } from "@/lib/actions/orders";
 import { Order } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
 import { ReceiptUploader } from "@/components/shop/receipt-uploader";
@@ -538,7 +538,7 @@ export default function ProfilePage() {
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4">
                       <div>
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Pedido #{order.id.slice(0, 8)}</p>
-                        <p className="text-sm text-gray-500">{new Date(order.date).toLocaleDateString()}</p>
+                        <p className="text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         {order.status === 'pending' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700 text-xs font-bold"><Clock className="h-3 w-3" /> Pendiente</span>}

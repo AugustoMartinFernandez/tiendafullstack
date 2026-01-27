@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { getAllOrders, updateOrderStatus } from "@/lib/order-service";
+import { getAllOrders, updateOrderStatus } from "@/lib/actions/orders";
 import { Order } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
 import { 
@@ -117,8 +117,8 @@ export default function AdminSalesPage() {
   const handleExportCSV = () => {
     const headers = ["ID", "Fecha", "Cliente", "Email", "Total", "Estado", "Productos"];
     const rows = filteredOrders.map(o => [
-      o.id,
-      new Date(o.date).toLocaleDateString(),
+      o.id, // ID del pedido
+      new Date(o.createdAt).toLocaleDateString(), // Fecha estandarizada
       o.userId ? "Usuario Registrado" : o.guestInfo?.name || "Invitado",
       o.guestInfo?.email || "N/A",
       o.total,
@@ -220,8 +220,8 @@ export default function AdminSalesPage() {
                   {/* FECHA */}
                   <td className="px-6 py-4 text-gray-600">
                     <div className="flex flex-col">
-                      <span className="font-medium">{new Date(order.date).toLocaleDateString()}</span>
-                      <span className="text-xs text-gray-400">{new Date(order.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                      <span className="font-medium">{new Date(order.createdAt).toLocaleDateString()}</span>
+                      <span className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                     </div>
                   </td>
 

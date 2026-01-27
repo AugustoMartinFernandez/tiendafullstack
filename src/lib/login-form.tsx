@@ -89,6 +89,7 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
             onChange={(e) => setEmail(e.target.value)}
             className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800 placeholder:text-gray-300"
             placeholder="tu@email.com"
+            autoComplete="email"
           />
         </div>
 
@@ -101,6 +102,7 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
             onChange={(e) => setPassword(e.target.value)}
             className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800 placeholder:text-gray-300"
             placeholder="••••••••"
+            autoComplete="current-password"
           />
         </div>
 
