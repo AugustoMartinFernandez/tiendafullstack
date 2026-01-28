@@ -578,3 +578,18 @@ export async function validateFavorites(ids: string[]) {
     return [];
   }
 }
+
+// --- ACCIÓN 11: OBTENER PRODUCTO POR ID (Para Edición) ---
+export async function getProductById(id: string) {
+  try {
+    const dbAdmin = getAdminDb();
+    const docSnap = await dbAdmin.collection("products").doc(id).get();
+
+    if (!docSnap.exists) return null;
+
+    return mapFirestoreDocToProduct(docSnap);
+  } catch (error) {
+    console.error("Error fetching product by id:", error);
+    return null;
+  }
+}

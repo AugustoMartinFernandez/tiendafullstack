@@ -23,19 +23,18 @@ export default function CheckoutPage() {
     notes: "",
   });
 
-  // 1. Autocompletado y Detección de Sesión
-  useEffect(() => {
-    if (!authLoading && user) {
-      setFormData((prev) => ({
-        ...prev,
-        name: profile?.name || user.displayName || prev.name,
-        email: user.email || prev.email,
-        // Intentamos pre-llenar con datos del perfil si existen (casting seguro)
-        phone: (profile as any)?.phone || prev.phone,
-        address: (profile as any)?.address || prev.address,
-      }));
-    }
-  }, [user, profile, authLoading]);
+useEffect(() => {
+  if (user && profile) { // Asegurate de verificar profile también si es posible
+    setFormData((prev) => ({
+      ...prev,
+      // CORRECCIÓN: Usar displayName en lugar de name
+      name: profile.displayName || user.displayName || prev.name, 
+      email: user.email || prev.email,
+      phone: profile.phone || prev.phone, // Ya está definido en UserProfile, no necesitas "as any"
+      address: profile.defaultAddress || prev.address, // Ya está definido en UserProfile
+    }));
+  }
+}, [user, profile]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });

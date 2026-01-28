@@ -30,7 +30,7 @@ export async function syncUserWithFirestore(user: User): Promise<UserProfile | n
       email: user.email || "",
       displayName: user.displayName || "Usuario",
       phone: user.phoneNumber || "",
-      role: isAdmin ? 'admin' : "customer",
+role: isAdmin ? 'admin' : 'user', // <--- CAMBIAR "customer" POR "user"
       createdAt: new Date().toISOString(),
       profilePhoto: user.photoURL || "",
       defaultAddress: "",

@@ -1,6 +1,7 @@
 "use client";
 
-import { getCategories, getTags, revalidateStore, createProduct } from "@/lib/actions";
+import { createProduct } from "@/lib/actions/products";
+import { getCategories, getTags } from "@/lib/actions/settings";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Plus, Trash2, Save, ArrowLeft, Link as LinkIcon, UploadCloud, X, FileText, Tag, Box, Check, Crop as CropIcon, Printer } from "lucide-react";
@@ -428,7 +429,7 @@ export default function NewProductPage() {
 
       if (result.success) {
         // 2. Revalidar caché
-        await revalidateStore();
+
         showToast("Producto creado con éxito", "success");
         router.push("/admin/productos");
       } else {
