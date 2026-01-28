@@ -6,13 +6,12 @@ import { createOrder } from "@/lib/actions/orders";
 import { useCart } from "@/context/cart-context";
 import { toast } from "sonner";
 import { Loader2, ShoppingBag } from "lucide-react";
-import { auth } from "@/lib/firebase"; // Auth de cliente
-import { onAuthStateChanged } from "firebase/auth";
+import { useAuth } from "@/context/auth-context";
 
 export default function CheckoutPage() {
   const { items, clearCart, totalPrice, isLoaded } = useCart();
+  const { user, profile, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const router = useRouter();
 
   // Estado del formulario
@@ -26,21 +25,17 @@ export default function CheckoutPage() {
 
   // 1. Autocompletado y Detección de Sesión
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        // Pre-llenar datos si están disponibles en el perfil de Auth
-        setFormData((prev) => ({
-          ...prev,
-          name: currentUser.displayName || prev.name,
-          email: currentUser.email || prev.email,
-          // Si tuvieras un perfil extendido en Firestore, podrías buscarlo aquí
-          // para llenar teléfono y dirección.
-        }));
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    if (!authLoading && user) {
+      setFormData((prev) => ({
+        ...prev,
+        name: profile?.name || user.displayName || prev.name,
+        email: user.email || prev.email,
+        // Intentamos pre-llenar con datos del perfil si existen (casting seguro)
+        phone: (profile as any)?.phone || prev.phone,
+        address: (profile as any)?.address || prev.address,
+      }));
+    }
+  }, [user, profile, authLoading]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });

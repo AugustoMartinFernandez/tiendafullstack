@@ -1,6 +1,6 @@
 import { db } from "@/lib/firebase";
 import { collection, getDocs, writeBatch, doc } from "firebase/firestore";
-import { CartItem } from "@/context/cart-context";
+import { CartItem } from "@/lib/types";
 
 /**
  * Obtiene el carrito de un usuario desde una subcolección en Firestore.
@@ -55,17 +55,27 @@ export async function saveUserCart(userId: string, items: CartItem[]): Promise<v
 export function mergeCarts(localCart: CartItem[], remoteCart: CartItem[]): CartItem[] {
   const mergedMap = new Map<string, CartItem>();
 
-  remoteCart.forEach(item => mergedMap.set(item.id, { ...item }));
+  // Función auxiliar para procesar items de manera uniforme
+  const processItem = (item: CartItem) => {
+    // Validación: Ignorar items con cantidad 0 o negativa
+    if (!item.quantity || item.quantity <= 0) return;
 
-  localCart.forEach(localItem => {
-    const existingItem = mergedMap.get(localItem.id);
+    const existingItem = mergedMap.get(item.id);
+
     if (existingItem) {
-      existingItem.quantity += localItem.quantity;
+      // Si el producto ya existe en el mapa, sumamos la cantidad
+      existingItem.quantity += item.quantity;
     } else {
-      mergedMap.set(localItem.id, { ...localItem });
+      // Si no existe, lo agregamos clonando el objeto (Inmutabilidad)
+      mergedMap.set(item.id, { ...item });
     }
-  });
+  };
+
+  // 1. Procesamos el carrito remoto primero (base)
+  remoteCart.forEach(processItem);
+
+  // 2. Procesamos el carrito local (se suman al remoto)
+  localCart.forEach(processItem);
 
   return Array.from(mergedMap.values());
 }
-

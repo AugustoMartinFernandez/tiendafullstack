@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateOrderStatus, registerPayment } from "@/lib/actions/orders";
+import { updateOrderStatus, addOrderPayment } from "@/lib/actions/orders";
 import { Loader2, Pencil, X, ExternalLink, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Order, ORDER_STATUSES } from "@/lib/types";
@@ -25,24 +25,23 @@ export function OrderActions({ order }: OrderActionsProps) {
   // Estado del Formulario
   const [status, setStatus] = useState(order.status);
   const [note, setNote] = useState(order.adminNote || "");
-  const [amountPaid, setAmountPaid] = useState(order.amountPaid || 0);
+  const [amountToAdd, setAmountToAdd] = useState<string>(""); // Empezamos vacío para obligar a escribir
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     startTransition(async () => {
-      // Usamos registerPayment para manejar la lógica financiera completa
-      // Nota: registerPayment actualiza el estado automáticamente si se paga todo,
-      // pero si el admin fuerza un estado manual, usamos updateOrderStatus después o combinamos.
-      const result = await registerPayment(order.id, amountPaid, note);
+      const amount = Number(amountToAdd) || 0;
+      const result = await addOrderPayment(order.id, amount, note);
       
       // Si el estado deseado es diferente al automático (ej: cancelar), forzamos update
       if (result.success && status !== order.status && status === 'cancelled') {
-         await updateOrderStatus(order.id, status, note, amountPaid);
+         await updateOrderStatus(order.id, status, note);
       }
 
       if (result.success) {
         toast.success(result.message);
         setIsOpen(false);
+        setAmountToAdd(""); // Reset
       } else {
         toast.error(result.message);
       }
@@ -101,21 +100,22 @@ export function OrderActions({ order }: OrderActionsProps) {
               {/* Input de Pago */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Pago Realizado (Total: ${order.total})
+                  Monto a Ingresar (Pago Nuevo)
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-gray-500">$</span>
                   <input
                     type="number"
                     min="0"
-                    max={order.total}
-                    value={amountPaid}
-                    onChange={(e) => setAmountPaid(Number(e.target.value))}
+                    max={order.balance}
+                    value={amountToAdd}
+                    onChange={(e) => setAmountToAdd(e.target.value)}
                     className="w-full border rounded-md p-2 pl-7"
+                    placeholder="0"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Resta: <span className="font-bold text-red-600">${Math.max(0, order.total - amountPaid)}</span>
+                  Resta por pagar: <span className="font-bold text-red-600">${order.balance}</span>
                 </p>
               </div>
 

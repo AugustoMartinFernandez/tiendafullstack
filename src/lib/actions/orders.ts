@@ -249,10 +249,14 @@ export async function uploadPaymentProof(orderId: string, fileUrl: string, fileT
   }
 }
 
-// --- ACCIÓN 9: REGISTRAR PAGO REAL (Admin - Transaccional) ---
-export async function registerPayment(orderId: string, amountPaid: number, note: string = "") {
+// --- ACCIÓN 9: AGREGAR PAGO INCREMENTAL (Admin - Transaccional) ---
+export async function addOrderPayment(orderId: string, amountToAdd: number, note: string = "") {
   const claims = await requireAdmin();
   const email = claims.email || "admin";
+
+  if (amountToAdd <= 0) {
+    return { success: false, message: "El monto debe ser mayor a 0." };
+  }
 
   try {
     const dbAdmin = getAdminDb();
@@ -266,38 +270,39 @@ export async function registerPayment(orderId: string, amountPaid: number, note:
       const total = data?.total || 0;
       const currentAmountPaid = data?.amountPaid || 0;
       
-      // Lógica de Saldo
-      const newBalance = Math.max(0, total - amountPaid);
-      const newPaymentStatus = newBalance === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'unpaid');
+      const newAmountPaid = currentAmountPaid + amountToAdd;
 
-      // --- LÓGICA DE HISTORIAL DE PAGOS ---
-      // Calculamos la diferencia para saber cuánto se pagó (o corrigió) en esta transacción
-      const delta = amountPaid - currentAmountPaid;
-      let newPayments = data?.payments || [];
-
-      if (delta !== 0) {
-        const transaction = {
-          id: Date.now().toString(),
-          amount: delta,
-          date: new Date().toISOString(),
-          note: note || (delta > 0 ? "Pago registrado" : "Corrección de saldo"),
-          recordedBy: email
-        };
-        newPayments = [...newPayments, transaction];
+      // Validación: No permitir pagar más del total
+      if (newAmountPaid > total) {
+        throw new Error(`El monto excede el saldo restante ($${total - currentAmountPaid}).`);
       }
+
+      const newBalance = total - newAmountPaid;
+      const newPaymentStatus = newBalance <= 0 ? 'paid' : 'partial';
+
+      // --- HISTORIAL DE PAGOS ---
+      let newPayments = data?.payments || [];
+      const transaction = {
+        id: Date.now().toString(),
+        amount: amountToAdd,
+        date: new Date().toISOString(),
+        note: note || "Pago registrado",
+        recordedBy: email
+      };
+      newPayments = [...newPayments, transaction];
       
       // Auto-aprobar si se paga el total y no estaba cancelado
       let newStatus = data?.status;
-      if (newBalance === 0 && newStatus !== 'cancelled' && newStatus !== 'shipped') {
+      if (newBalance <= 0 && newStatus !== 'cancelled' && newStatus !== 'shipped') {
         newStatus = 'approved';
       }
 
       t.update(orderRef, {
-        amountPaid: amountPaid,
+        amountPaid: newAmountPaid,
         balance: newBalance,
         paymentStatus: newPaymentStatus,
         status: newStatus,
-        adminNote: note,
+        adminNote: note, // Actualizamos la nota general también
         payments: newPayments, // Guardamos el historial
         updatedAt: new Date().toISOString(),
         updatedBy: email
@@ -309,12 +314,12 @@ export async function registerPayment(orderId: string, amountPaid: number, note:
     return { success: true, message: "Pago registrado correctamente." };
   } catch (error) {
     console.error("Error registering payment:", error);
-    return { success: false, message: "Error al registrar pago." };
+    return { success: false, message: error instanceof Error ? error.message : "Error al registrar pago." };
   }
 }
 
 // --- ACCIÓN 3: SUBIR COMPROBANTE (Usuario) ---
-export async function submitReceipt(orderId: string, fileUrl: string) {
+export async function submitReceipt(orderId: string, fileUrl: string, amountClaimed: number, fileType: string = 'image') {
   const user = await requireUser();
   if (!user) return { success: false, message: "Debes iniciar sesión." };
 
@@ -332,8 +337,14 @@ export async function submitReceipt(orderId: string, fileUrl: string) {
     }
 
     await orderRef.update({
-        receiptUrl: fileUrl,
-        receiptStatus: "reviewing",
+        paymentProof: {
+          url: fileUrl,
+          type: fileType,
+          amountClaimed: Number(amountClaimed),
+          status: 'pending',
+          submittedAt: new Date().toISOString()
+        },
+        status: 'payment_review',
         updatedAt: new Date().toISOString()
     });
 
@@ -426,5 +437,75 @@ export async function getOrderById(orderId: string) {
   } catch (error) {
     console.error(`Error fetching order ${orderId}:`, error);
     return null;
+  }
+}
+
+// --- ACCIÓN 10: OBTENER DETALLES DE ÉXITO (Público/Seguro) ---
+export async function getOrderSuccessDetails(orderId: string) {
+  noStore(); // Evitar caché para mostrar estado real
+  try {
+    const dbAdmin = getAdminDb();
+    const orderRef = dbAdmin.collection("orders").doc(orderId);
+    const orderSnap = await orderRef.get();
+
+    if (!orderSnap.exists) return null;
+    
+    const data = orderSnap.data();
+    if (!data) return null;
+
+    // Retornamos un objeto plano serializado para evitar errores en Server Components
+    return { 
+      id: orderSnap.id, 
+      ...data,
+      createdAt: data.createdAt || new Date().toISOString(), // Asegurar string
+    } as Order;
+  } catch (error) {
+    console.error(`Error fetching order success details ${orderId}:`, error);
+    return null;
+  }
+}
+
+// --- ACCIÓN 11: VINCULAR PEDIDOS DE INVITADO (Adopción) ---
+export async function claimGuestOrders(email: string) {
+  const user = await requireUser();
+  if (!user) return { success: false, message: "Debes iniciar sesión." };
+
+  // Seguridad: Validamos que el email reclamado sea el del usuario actual
+  // Esto evita que un usuario malintencionado reclame pedidos de otros sabiendo su email
+  if (user.email !== email) {
+    return { success: false, message: "No puedes reclamar pedidos de otro email." };
+  }
+
+  try {
+    const dbAdmin = getAdminDb();
+    
+    // Buscamos pedidos donde userId es 'guest' Y el email coincide
+    const snapshot = await dbAdmin.collection("orders")
+      .where("userId", "==", "guest")
+      .where("guestInfo.email", "==", email)
+      .get();
+
+    if (snapshot.empty) {
+      return { success: true, count: 0, message: "No se encontraron pedidos huérfanos." };
+    }
+
+    const batch = dbAdmin.batch();
+    
+    snapshot.docs.forEach((doc) => {
+      batch.update(doc.ref, { 
+        userId: user.uid,
+        updatedAt: new Date().toISOString()
+      });
+    });
+
+    await batch.commit();
+    
+    // Revalidamos para que aparezcan inmediatamente en la lista
+    revalidatePath("/mis-pedidos");
+    
+    return { success: true, count: snapshot.size, message: `${snapshot.size} pedidos vinculados.` };
+  } catch (error) {
+    console.error("Error claiming guest orders:", error);
+    return { success: false, message: "Error al vincular pedidos." };
   }
 }

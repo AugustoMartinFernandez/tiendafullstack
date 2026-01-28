@@ -1,163 +1,120 @@
-import { CheckCircle, MessageCircle, Package, Clock, MapPin, Phone, User } from "lucide-react";
 import Link from "next/link";
-import { getOrderById } from "@/lib/actions/orders";
-import { formatPrice } from "@/lib/format";
-import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth-server";
-import { redirect } from "next/navigation";
 import Image from "next/image";
+import { Package, CheckCircle, MapPin, Phone, User } from "lucide-react";
+import { getOrderSuccessDetails } from "@/lib/actions/orders";
+import { SuccessClientActions } from "./success-client-actions";
 
-export const metadata = {
-  title: "Pedido Confirmado",
-};
-
-export default async function CheckoutSuccessPage({
-  searchParams,
-}: {
+interface PageProps {
   searchParams: Promise<{ orderId?: string }>;
-}) {
-  const user = await requireUser();
+}
 
-  // Si no hay usuario, redirigimos al login
-  if (!user) {
-    redirect("/login?redirect=/checkout/success");
-  }
-
-  const params = await searchParams;
-  const orderId = params.orderId;
-
-  if (!orderId) {
-    notFound(); 
-  }
-
-  const order = await getOrderById(orderId);
+export default async function SuccessPage({ searchParams }: PageProps) {
+  const { orderId } = await searchParams;
+  const order = orderId ? await getOrderSuccessDetails(orderId) : null;
 
   if (!order) {
-    notFound();
+    return (
+      <div className="min-h-[80vh] flex flex-col items-center justify-center p-4 text-center bg-gray-50">
+        <div className="bg-gray-100 p-6 rounded-full mb-4">
+          <Package className="h-10 w-10 text-gray-400" />
+        </div>
+        <h1 className="text-xl font-bold text-gray-900 mb-2">No encontramos tu pedido</h1>
+        <p className="text-gray-500 mb-6 max-w-md">
+          Parece que el enlace expiró o el ID es incorrecto. Si acabas de comprar, revisa tu correo.
+        </p>
+        <Link href="/" className="px-6 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all">
+          Volver a la tienda
+        </Link>
+      </div>
+    );
   }
-
-  // --- LÓGICA WHATSAPP INTACTA ---
-  const PHONE_NUMBER = "5493815949243"; 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-  
-  let whatsappMessage = `👋 ¡Hola! Quiero confirmar mi pedido *#${order.id.slice(0, 8).toUpperCase()}*.\n\n`;
-  order.items.forEach(item => {
-    whatsappMessage += `▪️ *${item.quantity}x ${item.name}* (${formatPrice(item.price)})\n`;
-    whatsappMessage += `   🔗 ${baseUrl}/producto/${item.id}\n`;
-  });
-  whatsappMessage += `\n💰 *TOTAL: ${formatPrice(order.total)}*\n\n`;
-  
-  // La información del cliente siempre está en `guestInfo`
-  const clientInfo = order.guestInfo;
-
-  if (clientInfo) {
-    whatsappMessage += `📋 *Mis Datos:*\n`;
-    whatsappMessage += `👤 Nombre: ${clientInfo.name}\n`;
-    whatsappMessage += `📍 Dirección: ${clientInfo.address}\n`;
-    whatsappMessage += `📱 Teléfono: ${clientInfo.phone}\n`;
-    if (clientInfo.notes) whatsappMessage += `📝 Notas: ${clientInfo.notes}\n`;
-  }
-  const encodedWhatsappMessage = encodeURIComponent(whatsappMessage);
-  const whatsappUrl = `https://wa.me/${PHONE_NUMBER}?text=${encodedWhatsappMessage}`;
-  // ------------------------------
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 py-12">
-      <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-lg border border-gray-100 max-w-lg w-full">
+    <div className="min-h-screen bg-gray-50/50 py-12 px-4 sm:px-6 lg:px-8 flex flex-col items-center">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl shadow-gray-200/50 overflow-hidden border border-gray-100 animate-in slide-in-from-bottom-4 duration-700">
         
-        {/* Encabezado de Éxito */}
-        <div className="text-center">
-          <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4 animate-in zoom-in duration-300">
-            <CheckCircle className="h-10 w-10 text-green-600" />
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2">¡Pedido Confirmado!</h2>
-          <p className="text-gray-500 mb-8 text-sm sm:text-base">
-            Tu pedido <span className="font-bold text-gray-900">#{order.id.slice(0, 8).toUpperCase()}</span> ha sido registrado.
-            <br className="hidden sm:block"/> Para finalizar, envianos el detalle por WhatsApp.
-          </p>
-        </div>
-
-        {/* Resumen del Pedido Mejorado */}
-        <div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden mb-8">
-          <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-100/50">
-            <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
-              <Package className="h-4 w-4 text-indigo-600" /> Resumen de compra
-            </p>
-            <div className="flex items-center gap-1.5 text-xs font-bold text-yellow-700 bg-yellow-100 px-2.5 py-1 rounded-full">
-              <Clock className="h-3.5 w-3.5" />
-              <span>Pendiente</span>
+        {/* Encabezado Verde */}
+        <div className="bg-emerald-500 p-8 text-center relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
+          <div className="relative z-10 flex flex-col items-center">
+            <div className="h-16 w-16 bg-white rounded-full flex items-center justify-center mb-3 shadow-lg animate-in zoom-in duration-500 delay-150">
+              <CheckCircle className="h-8 w-8 text-emerald-500" />
             </div>
-          </div>
-
-          <div className="p-4 space-y-4">
-            {order.items.map((item) => (
-              <div key={item.id} className="flex items-start gap-4">
-                {/* Imagen del Producto */}
-                <div className="relative h-16 w-16 flex-shrink-0 rounded-xl overflow-hidden border border-gray-200 bg-white">
-                  <Image
-                    src={item.imageUrl || "/images/product-placeholder.png"}
-                    alt={item.name}
-                    fill
-                    className="object-cover"
-                    sizes="64px"
-                  />
-                </div>
-                
-                {/* Detalles */}
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-gray-800 text-sm line-clamp-2">{item.name}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Cantidad: <span className="font-medium text-gray-900">{item.quantity}</span>
-                  </p>
-                </div>
-                
-                {/* Precio */}
-                <p className="font-bold text-gray-900 text-sm whitespace-nowrap">
-                  {formatPrice(item.price * item.quantity)}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          {/* Totales */}
-          <div className="bg-gray-100/50 p-4 border-t border-gray-200 flex justify-between items-center">
-             <span className="text-gray-600 font-medium">Total a Pagar</span>
-             <span className="text-xl font-black text-gray-900">{formatPrice(order.total)}</span>
+            <h1 className="text-2xl font-black text-white tracking-tight">¡Compra Exitosa!</h1>
+            <p className="text-emerald-100 font-medium text-sm mt-1">Comprobante Digital #{order.id.slice(0, 8)}</p>
           </div>
         </div>
 
-        {/* Datos de Envío (Visual) */}
-        {clientInfo && (
-          <div className="mb-8 p-4 rounded-xl border border-gray-100 bg-white text-sm space-y-2 text-gray-600">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-gray-400" /> <span>{clientInfo.name}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-gray-400" /> <span className="line-clamp-1">{clientInfo.address}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-gray-400" /> <span>{clientInfo.phone}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Botones de Acción */}
-        <div className="space-y-3">
-          <a
-            href={whatsappUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-all shadow-lg hover:shadow-green-200 flex items-center justify-center gap-2 transform active:scale-[0.98]"
-          >
-            <MessageCircle className="h-5 w-5" /> Confirmar por WhatsApp
-          </a>
+        <div className="p-6 space-y-6">
           
-          <Link 
-            href="/mis-pedidos" 
-            className="w-full py-4 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
-          >
-            <Package className="h-5 w-5" /> Ir a Mis Pedidos
-          </Link>
+          {/* ID Visual */}
+          <div className="flex items-center justify-between bg-gray-50 px-4 py-3 rounded-xl border border-gray-200">
+            <span className="text-xs font-bold text-gray-500 uppercase">ID de Orden</span>
+            <span className="font-mono font-bold text-gray-800">#{order.id.slice(0, 8)}</span>
+          </div>
+
+          {/* Resumen de Items */}
+          <div>
+            <h3 className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3 flex items-center gap-2">
+              <Package className="h-4 w-4" /> Resumen del Pedido
+            </h3>
+            <div className="space-y-3">
+              {order.items.map((item: any) => (
+                <div key={item.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-white">
+                    {item.imageUrl ? (
+                      <Image src={item.imageUrl} alt={item.name} fill className="object-cover" sizes="48px" />
+                    ) : (
+                      <div className="h-full w-full bg-gray-100 flex items-center justify-center"><Package className="h-4 w-4 text-gray-300" /></div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">{item.name}</p>
+                    <p className="text-xs text-gray-500">Cant: {item.quantity}</p>
+                  </div>
+                  <p className="text-sm font-bold text-gray-900">${item.price * item.quantity}</p>
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+                <span className="font-bold text-gray-900">Total</span>
+                <span className="text-xl font-black text-gray-900">${order.total}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Datos de Envío */}
+          {order.guestInfo && (
+            <div className="bg-indigo-50/50 rounded-2xl p-4 border border-indigo-100">
+              <h3 className="text-xs font-black uppercase text-indigo-400 tracking-widest mb-3">Datos de Envío</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-start gap-3">
+                  <User className="h-4 w-4 text-indigo-500 mt-0.5" />
+                  <span className="font-medium text-gray-700">{order.guestInfo.name}</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-4 w-4 text-indigo-500 mt-0.5" />
+                  <span className="font-medium text-gray-700">{order.guestInfo.address}</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Phone className="h-4 w-4 text-indigo-500 mt-0.5" />
+                  <span className="font-medium text-gray-700">{order.guestInfo.phone}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Estado */}
+          <div className="flex items-center justify-center gap-2 py-2 bg-yellow-50 text-yellow-700 rounded-lg border border-yellow-100">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+            </span>
+            <span className="text-xs font-bold uppercase tracking-wide">Pendiente de Pago</span>
+          </div>
+
+          {/* Acciones del Cliente (WhatsApp + Modal) */}
+          <SuccessClientActions orderId={order.id} />
+          
         </div>
       </div>
     </div>

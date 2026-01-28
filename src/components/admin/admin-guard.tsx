@@ -25,8 +25,8 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
         // forceRefresh: true es CRÍTICO aquí para seguridad (revocación de roles) y para obtener el claim recién asignado
         const token = await user.getIdTokenResult(true);
 
-        if (token.claims.admin) {
-          setStatus('authorized');
+  if (token.claims.role === 'admin') {
+  setStatus('authorized');
         } else {
           // ⛔ Es Usuario Normal -> Mostrar UI de No Autorizado (No redirigir silenciosamente)
           setStatus('unauthorized');

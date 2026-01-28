@@ -54,9 +54,23 @@ export interface Order {
     address: string;
     notes?: string;
   };
+  // Datos del usuario registrado (opcional, para visualización híbrida)
+  user?: {
+    name: string;
+    email: string;
+    phone?: string;
+    address?: string;
+  };
   // Campos Financieros y de Auditoría
   paymentProofUrl?: string;
   paymentProofType?: 'image' | 'pdf';
+  paymentProof?: {
+    url: string;
+    type: string;
+    amountClaimed: number;
+    status: 'pending' | 'approved' | 'rejected';
+    submittedAt: string;
+  };
   adminNote?: string;
   amountPaid: number;      // Obligatorio para cuenta corriente
   balance: number;         // Obligatorio: total - amountPaid
