@@ -2,6 +2,41 @@ export const ORDER_STATUSES = ['pending', 'payment_review', 'approved', 'shipped
 export type OrderStatus = typeof ORDER_STATUSES[number];
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid';
 
+// --- OBSERVABILIDAD (PASO 3) ---
+export type OrderEventType = 'STATUS_CHANGE' | 'PAYMENT_ADDED' | 'CANCELLED' | 'ADMIN_MESSAGE';
+
+export interface OrderEvent {
+  id?: string;
+  orderId: string;
+  type: OrderEventType;
+  message: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  createdBy: string; // email o 'system'
+}
+
+// --- NOTIFICACIONES (PASO 4) ---
+export interface UserNotification {
+  id: string;
+  userId: string | null;
+  orderId: string;
+  type: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+}
+
+// --- COMPROBANTES DE PAGO ---
+export interface PaymentProof {
+  id: string;
+  url: string;
+  type: 'image' | 'pdf';
+  uploadedAt: string;
+  uploadedBy: string; // userId o 'guest'
+  status: 'pending_review' | 'approved' | 'rejected';
+  amountClaimed?: number;
+}
+
 // --- USUARIO (ESTO ES LO QUE FALTABA) ---
 export interface UserProfile {
   uid: string;
@@ -15,6 +50,8 @@ export interface UserProfile {
   age?: number;
   role?: 'admin' | 'user';
   createdAt?: string;
+  notificationsOptIn?: boolean; // Flag para WhatsApp/Push
+  internalNote?: string; // Notas internas del admin (CRM)
 }
 
 // --- FINANZAS ---
@@ -62,6 +99,7 @@ export interface Order {
   id: string;
   userId: string | null;
   createdAt: string;
+  clientOrderId?: string; // ID de idempotencia
   total: number;
   status: OrderStatus;
   items: OrderItem[];
@@ -89,20 +127,22 @@ export interface Order {
   payments?: PaymentTransaction[];
   adminNote?: string;
 
-  // --- COMPROBANTES (NUEVO Y VIEJO) ---
+  // --- COMPROBANTES ---
+  paymentProofs?: PaymentProof[]; // Array oficial
   
-  // 1. Estructura nueva (la PRO que agregaste)
-  paymentProof?: {
-    url: string;
-    type: string;
-    amountClaimed: number;
-    status: 'pending' | 'approved' | 'rejected';
-    submittedAt: string;
-  };
-
-  // 2. Estructura Legacy (Agregá esto para que Vercel deje de fallar)
+  // Legacy (Mantener para no romper UI vieja si existe)
   receiptUrl?: string; 
   receiptStatus?: string;
   paymentProofUrl?: string; 
   paymentProofType?: 'image' | 'pdf';
+}
+
+export interface ShopBanner {
+  isActive: boolean;
+  title: string;
+  description: string;
+  backgroundColor: string; // Hex color o clase tailwind
+  textColor: string;       // Hex color
+  buttonText?: string;     // Opcional: Texto del botón (Ej: "Ver Oferta")
+  buttonLink?: string;     // Opcional: Link (Ej: "/tienda?category=Ofertas")
 }

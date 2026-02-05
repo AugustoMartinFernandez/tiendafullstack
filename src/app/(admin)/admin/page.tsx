@@ -1,88 +1,79 @@
-import { getHomeConfig } from "@/lib/db";
-import { updateHomeConfig } from "@/lib/actions/settings";
+import { Suspense } from "react";
+import { getAdminDb } from "@/lib/firebase-admin";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; // Asegúrate de tener estos componentes o usa divs con clases
+import { DollarSign, ShoppingBag, Users, Package } from "lucide-react";
 
-export default async function AdminPage() {
-  // 1. Leemos la configuración actual para mostrarla en el formulario
-  const config = await getHomeConfig();
+// Función auxiliar para obtener métricas rápidas
+async function getDashboardMetrics() {
+  const db = getAdminDb();
+  // Esto es un ejemplo, idealmente usarías contadores reales o 'count()' de Firestore
+  const ordersSnap = await db.collection("orders").count().get();
+  const productsSnap = await db.collection("products").count().get();
+  const usersSnap = await db.collection("users").count().get();
+  
+  return {
+    orders: ordersSnap.data().count,
+    products: productsSnap.data().count,
+    users: usersSnap.data().count,
+    revenue: 0 // Calcular ingresos reales requiere sumar órdenes
+  };
+}
+
+export default async function AdminDashboardPage() {
+  const metrics = await getDashboardMetrics();
 
   return (
-    <div className="min-h-screen bg-muted/20 p-8">
-      <div className="mx-auto max-w-2xl bg-background border border-border rounded-xl shadow-sm p-8">
-        <h1 className="text-2xl font-bold text-foreground mb-6">
-          Editor del Home
-        </h1>
-
-        {/* El formulario llama a la Server Action que creamos antes */}
-        <form action={async (formData) => {
-          "use server";
-          await updateHomeConfig(formData);
-        }} className="space-y-6">
-          
-          {/* Título */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Título Principal</label>
-            <input
-              name="title"
-              defaultValue={config.hero.title}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            />
-          </div>
-
-          {/* Subtítulo */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Subtítulo</label>
-            <textarea
-              name="subtitle"
-              defaultValue={config.hero.subtitle}
-              rows={3}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            />
-          </div>
-
-          {/* Badge (Etiqueta chica) */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Etiqueta (Badge)</label>
-              <input
-                name="badgeText"
-                defaultValue={config.hero.badgeText}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-            
-            {/* Texto Botón */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Texto Botón</label>
-              <input
-                name="buttonText"
-                defaultValue={config.hero.buttonText}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-          </div>
-
-          {/* URL Imagen */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">URL de Imagen</label>
-            <input
-              name="imageUrl"
-              defaultValue={config.hero.imageUrl}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <p className="text-xs text-muted-foreground">Pega el link de la foto aquí.</p>
-          </div>
-
-          {/* Campos ocultos (para mantener datos que no editamos hoy) */}
-          <input type="hidden" name="buttonUrl" value={config.hero.buttonUrl} />
-
-          <button
-            type="submit"
-            className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            Guardar Cambios
-          </button>
-        </form>
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight text-gray-900">Dashboard</h2>
+        <p className="text-gray-500">Resumen general de tu tienda.</p>
       </div>
+
+      {/* TARJETAS DE MÉTRICAS (Responsive Grid) */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ventas Totales</CardTitle>
+            <DollarSign className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">$ {metrics.revenue}</div>
+            <p className="text-xs text-gray-500">+20.1% desde el mes pasado</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pedidos</CardTitle>
+            <ShoppingBag className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">+{metrics.orders}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Productos</CardTitle>
+            <Package className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{metrics.products}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Clientes</CardTitle>
+            <Users className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">+{metrics.users}</div>
+          </CardContent>
+        </Card>
+      </div>
+      
+      {/* AQUÍ PUEDES AGREGAR GRÁFICOS O TABLAS DE ÚLTIMOS PEDIDOS */}
     </div>
   );
 }

@@ -12,6 +12,7 @@ export default function CheckoutPage() {
   const { items, clearCart, totalPrice, isLoaded } = useCart();
   const { user, profile, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [clientOrderId, setClientOrderId] = useState("");
   const router = useRouter();
 
   // Estado del formulario
@@ -22,6 +23,11 @@ export default function CheckoutPage() {
     email: "",
     notes: "",
   });
+
+  // Generar ID de idempotencia al montar el componente
+  useEffect(() => {
+    setClientOrderId(crypto.randomUUID());
+  }, []);
 
 useEffect(() => {
   if (user && profile) { // Asegurate de verificar profile también si es posible
@@ -66,6 +72,7 @@ useEffect(() => {
     // El precio se calcula en el servidor (createOrder)
     const payload = {
       userId: user ? user.uid : null,
+      clientOrderId, // Enviamos el ID único de este intento
       userInfo: {
         name: formData.name,
         phone: formData.phone,
@@ -114,7 +121,7 @@ useEffect(() => {
 
   return (
     <div className="container mx-auto p-4 max-w-2xl py-12">
-      <h1 className="text-3xl font-black text-gray-900 mb-2">Finalizar Compra</h1>
+      <h1 className="text-3xl font-black text-gray-900 mb-2">Finalizar Pedido</h1>
       <p className="text-gray-500 mb-8">Completa tus datos para procesar el pedido.</p>
 
       <form onSubmit={handleCheckout} className="space-y-6 bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">

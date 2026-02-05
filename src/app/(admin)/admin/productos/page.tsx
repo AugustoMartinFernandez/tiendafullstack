@@ -1,6 +1,6 @@
 import { getAdminProducts, getProductsCount } from "@/lib/actions/products";
 import { getCategories } from "@/lib/actions/settings";
-import { ProductRow } from "@/components/admin/product-row";
+import { ProductListItem } from "@/components/admin/product-list-item";
 import { AdminCategorySelector } from "@/components/admin/admin-category-selector";
 import Link from "next/link";
 import { Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
@@ -50,10 +50,12 @@ export default async function AdminProductsPage({
       </div>
 
       {/* TABLA DE PRODUCTOS */}
-      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50/50 text-xs uppercase text-gray-500">
+      {/* En móvil quitamos el borde y fondo blanco del contenedor principal para que las cards floten sobre el fondo gris */}
+      <div className="md:rounded-2xl md:border md:border-gray-100 md:bg-white md:shadow-sm md:overflow-hidden">
+        <div className="md:overflow-x-auto">
+          {/* 'block' en móvil permite que los tr (que son flex-col) se apilen correctamente */}
+          <table className="w-full text-left text-sm block md:table">
+            <thead className="hidden md:table-header-group bg-gray-50/50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="px-6 py-4 font-black tracking-wider">Producto</th>
                 <th className="px-6 py-4 font-black tracking-wider">Categoría</th>
@@ -62,13 +64,14 @@ export default async function AdminProductsPage({
                 <th className="px-6 py-4 font-black tracking-wider text-right">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            {/* 'block' en tbody para móvil */}
+            <tbody className="block md:table-row-group md:divide-y md:divide-gray-100">
               {products.map((product) => (
-                <ProductRow key={product.id} product={product} />
+                <ProductListItem key={product.id} product={product} />
               ))}
               {products.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={5} className="block md:table-cell px-6 py-12 text-center text-gray-500 bg-white rounded-xl md:bg-transparent">
                     No hay productos cargados aún.
                   </td>
                 </tr>

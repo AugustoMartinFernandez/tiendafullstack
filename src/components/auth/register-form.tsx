@@ -3,16 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { signInAndCreateSession, signInWithGoogleAndCreateSession } from "@/lib/auth-client";
-import { Loader2, UserPlus } from "lucide-react";
+import { registerWithEmail, signInWithGoogleAndCreateSession } from "@/lib/auth-client";
+import { Loader2, UserPlus, User } from "lucide-react";
 import { Toast, ToastType } from "@/components/ui/toast";
 
 export function RegisterForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -47,6 +48,9 @@ export function RegisterForm() {
   const handleEmailRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!name.trim()) {
+      return showToast("Por favor ingresá tu nombre.", "error");
+    }
     if (password.length < 8) {
       return showToast("La contraseña debe tener al menos 8 caracteres.", "error");
     }
@@ -55,34 +59,22 @@ export function RegisterForm() {
     }
 
     setLoading(true);
-    try {
-      // 1. Crear usuario en Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
 
-      // 2. Crear perfil en Firestore
-      await createUserProfile(user);
+    // Usamos la nueva función unificada del cliente
+    const result = await registerWithEmail(email, password, name);
 
-      // 3. Crear sesión de servidor (Cookie)
-      // Reutilizamos la función existente para consistencia total
-      const sessionResult = await signInAndCreateSession(email, password, false);
-
-      if (sessionResult.success) {
-        showToast("¡Cuenta creada! Redirigiendo...", "success");
-        router.push("/");
-        router.refresh();
-      } else {
-        // Si falla la cookie, revertimos (logout) para no dejar estado inconsistente
-        await signOut(auth);
-        showToast("Error al iniciar sesión automática. Por favor ingresá manualmente.", "error");
-        setLoading(false);
-      }
-    } catch (error: any) {
-      console.error("Error en registro:", error);
-      let msg = "Error al crear la cuenta.";
-      if (error.code === "auth/email-already-in-use") msg = "El correo ya está registrado.";
-      if (error.code === "auth/invalid-email") msg = "El correo no es válido.";
-      showToast(msg, "error");
+    if (result.success && result.user) {
+      // Crear perfil extendido en Firestore (Roles, fechas, etc.)
+      // Nota: El displayName ya se actualizó en registerWithEmail, pero lo guardamos en Firestore también
+      await createUserProfile(result.user);
+      
+      showToast("¡Cuenta creada! Te enviamos un correo de verificación.", "success");
+      router.push("/");
+      router.refresh();
+    } else {
+      // Si falló algo en el proceso de auth-client
+      if (auth.currentUser) await signOut(auth); // Limpieza por si acaso
+      showToast(result.message || "Error al crear la cuenta.", "error");
       setLoading(false);
     }
   };
@@ -130,6 +122,18 @@ export function RegisterForm() {
       </div>
 
       <form onSubmit={handleEmailRegister} className="space-y-5">
+        <div>
+          <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-2">Nombre Completo</label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-gray-800 placeholder:text-gray-300"
+            placeholder="Juan Pérez"
+          />
+        </div>
+
         <div>
           <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-2">Email</label>
           <input

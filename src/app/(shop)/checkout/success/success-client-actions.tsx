@@ -66,10 +66,15 @@ export function SuccessClientActions({ orderId }: Props) {
               <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center mb-6 animate-bounce">
                 <UserPlus className="h-8 w-8 text-indigo-600" />
               </div>
-              <h2 className="text-2xl font-black text-gray-900 mb-3">¡No pierdas tu pedido!</h2>
+              <h2 className="text-2xl font-black text-gray-900 mb-3">
+                ¡No pierdas tu pedido!
+              </h2>
               <p className="text-gray-500 mb-8">
-                Como compraste como invitado, no podrás rastrear el envío si cerrás esta web. <br />
-                <span className="text-indigo-600 font-bold">Creá tu cuenta para guardarlo.</span>
+                Como compraste como invitado, no podrás rastrear el envío si
+                cerrás esta web. <br />
+                <span className="text-indigo-600 font-bold">
+                  Creá tu cuenta para guardarlo.
+                </span>
               </p>
               <div className="space-y-3">
                 <Link

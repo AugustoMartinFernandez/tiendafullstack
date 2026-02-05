@@ -4,10 +4,9 @@
 import { Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { PRODUCT_CATEGORIES } from "@/lib/constants";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown } from "lucide-react";
 
 interface CategoryFilterProps {
   allCategories?: string[];
@@ -17,122 +16,165 @@ interface CategoryFilterProps {
   isLoading?: boolean;
 }
 
-export function CategoryFilter({ allCategories = [], products = [], currentCategory, currentSubCategory, isLoading }: CategoryFilterProps) {
+export function CategoryFilter({ 
+  allCategories = [], 
+  products = [], 
+  currentCategory, 
+  currentSubCategory, 
+  isLoading 
+}: CategoryFilterProps) {
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   if (isLoading) {
     return (
-      <div className="py-4 space-y-4">
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="w-full space-y-3 py-2">
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-4 sm:px-0">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="shrink-0 h-9 w-24 rounded-full" />
+            <Skeleton key={i} className="shrink-0 h-10 w-24 rounded-full" />
           ))}
         </div>
       </div>
     );
   }
 
-  // Extraer subcategorías disponibles por categoría principal
-  const subCategoriesMap = products.reduce((acc, product) => {
-    if (!acc[product.category]) {
-      acc[product.category] = new Set();
-    }
-    if (product.subCategory) {
-      acc[product.category].add(product.subCategory);
+  // 1. Categorías: Prioridad a props, fallback a constantes
+  const categories = allCategories.length > 0 ? allCategories : PRODUCT_CATEGORIES;
+
+  // 2. Calcular conteos por categoría (Facets)
+  const categoryCounts = products.reduce((acc, product) => {
+    const cat = product.category;
+    if (cat) {
+      acc[cat] = (acc[cat] || 0) + 1;
     }
     return acc;
-  }, {} as Record<string, Set<string>>);
+  }, {} as Record<string, number>);
 
+  // 3. Subcategorías: Calculadas dinámicamente de los productos
+  // Filtramos los productos que pertenecen a la categoría seleccionada
+  // para ver qué subcategorías tienen disponibles.
+  const subCategories = new Set<string>();
+  if (currentCategory) {
+    products.forEach(product => {
+      if (product.category === currentCategory && product.subCategory) {
+        subCategories.add(product.subCategory);
+      }
+    });
+  }
+  const availableSubCategories = Array.from(subCategories).sort();
+
+  // Helper para construir URLs preservando otros parámetros (como search, min, max)
+  // pero reseteando la página a 1.
   const createUrl = (cat?: string, sub?: string) => {
     const params = new URLSearchParams(searchParams.toString());
+    
     if (cat) params.set("category", cat);
     else params.delete("category");
     
     if (sub) params.set("subCategory", sub);
     else params.delete("subCategory");
     
+    params.delete("page"); // Resetear a página 1 al filtrar
+    
     return `?${params.toString()}`;
   };
 
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    if (value === "all") {
-      router.push(createUrl(undefined, undefined));
-    } else {
-      router.push(createUrl(value, undefined));
-    }
-  };
-
-  const categoriesToDisplay = allCategories.length > 0 ? allCategories : PRODUCT_CATEGORIES;
-
   return (
-    <div className="py-4 space-y-4 animate-in fade-in duration-500">
-      {/* Mobile: Dropdown */}
-      <div className="md:hidden relative">
-        <label htmlFor="category-select" className="sr-only">Seleccionar categoría</label>
-        <select
-          id="category-select"
-          value={currentCategory || "all"}
-          onChange={handleCategoryChange}
-          className="w-full h-12 px-4 pr-10 rounded-xl border border-gray-200 bg-white text-sm font-bold text-gray-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm appearance-none"
-        >
-          <option value="all">Todas las categorías</option>
-          {categoriesToDisplay.map((cat) => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-          <ChevronDown className="h-5 w-5" />
+    <div className="flex flex-col gap-4 w-full">
+      
+      {/* NIVEL 1: CATEGORÍAS PRINCIPALES */}
+      {/* Contenedor con scroll horizontal y padding lateral para móviles */}
+      <div className="w-full overflow-x-auto scrollbar-hide touch-pan-x">
+        <div className="flex gap-3 min-w-max px-1 pb-1">
+          {/* Opción "Todas" */}
+          <Link
+            href={createUrl(undefined, undefined)}
+            scroll={false}
+            className={cn(
+              "flex items-center justify-center px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-200 border select-none group",
+              !currentCategory 
+                ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200 ring-2 ring-indigo-100 ring-offset-2" 
+                : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100 hover:text-gray-900"
+            )}
+          >
+            Todas
+            <span className={cn(
+              "ml-2 inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full text-[10px] font-extrabold transition-colors",
+              !currentCategory 
+                ? "bg-white/20 text-white" 
+                : "bg-gray-200 text-gray-500 group-hover:bg-gray-300"
+            )}>
+              {products.length}
+            </span>
+          </Link>
+
+          {/* Lista de Categorías */}
+          {categories.map((cat) => {
+            const count = categoryCounts[cat] || 0;
+            return (
+            <Link
+              key={cat}
+              href={createUrl(cat, undefined)}
+              scroll={false}
+              className={cn(
+                "flex items-center justify-center px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-200 border select-none group",
+                currentCategory === cat
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200 ring-2 ring-indigo-100 ring-offset-2"
+                  : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100 hover:text-gray-900"
+              )}
+            >
+              {cat}
+              {count > 0 && (
+                <span className={cn(
+                  "ml-2 inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full text-[10px] font-extrabold transition-colors",
+                  currentCategory === cat
+                    ? "bg-white/20 text-white"
+                    : "bg-gray-200 text-gray-500 group-hover:bg-gray-300"
+                )}>
+                  {count}
+                </span>
+              )}
+            </Link>
+            );
+          })}
         </div>
       </div>
 
-      {/* Desktop: Pills */}
-      <div className="hidden md:flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-        <Link
-          href={createUrl(undefined, undefined)}
-          className={cn(
-            "shrink-0 px-4 py-2 rounded-full text-sm font-bold transition-all border",
-            !currentCategory 
-              ? "bg-gray-900 text-white border-gray-900" 
-              : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-          )}
-        >
-          Todos
-        </Link>
-        {categoriesToDisplay.map((cat) => (
-          <Link
-            key={cat}
-            href={createUrl(cat, undefined)}
-            className={cn(
-              "shrink-0 px-4 py-2 rounded-full text-sm font-bold transition-all border",
-              currentCategory === cat
-                ? "bg-gray-900 text-white border-gray-900"
-                : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-            )}
-          >
-            {cat}
-          </Link>
-        ))}
-      </div>
-
-      {/* NIVEL 2: SUBCATEGORÍAS (Solo si hay categoría seleccionada y existen subcategorías) */}
-      {currentCategory && subCategoriesMap[currentCategory] && subCategoriesMap[currentCategory].size > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide animate-in slide-in-from-top-2 fade-in duration-300">
-          {Array.from(subCategoriesMap[currentCategory]).map((sub) => (
+      {/* NIVEL 2: SUBCATEGORÍAS (Solo si hay categoría seleccionada y subcategorías disponibles) */}
+      {currentCategory && availableSubCategories.length > 0 && (
+        <div className="w-full overflow-x-auto scrollbar-hide touch-pan-x animate-in slide-in-from-top-1 fade-in duration-300">
+          <div className="flex gap-2 min-w-max items-center px-1">
+            
+            {/* Botón "Todo en [Categoría]" */}
             <Link
-              key={sub}
-              href={createUrl(currentCategory, currentSubCategory === sub ? undefined : sub)}
+              href={createUrl(currentCategory, undefined)}
+              scroll={false}
               className={cn(
-                "shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-                currentSubCategory === sub
-                  ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/20"
-                  : "bg-gray-50 text-gray-500 hover:bg-gray-100"
+                "px-4 py-1.5 rounded-full text-xs font-bold transition-all border select-none",
+                !currentSubCategory
+                  ? "bg-gray-800 text-white border-gray-800 shadow-sm"
+                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700"
               )}
             >
-              {sub}
+              Todo en {currentCategory}
             </Link>
-          ))}
+
+            {/* Lista de Subcategorías */}
+            {availableSubCategories.map((sub) => (
+              <Link
+                key={sub}
+                href={createUrl(currentCategory, sub)}
+                scroll={false}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-xs font-bold transition-all border select-none",
+                  currentSubCategory === sub
+                    ? "bg-indigo-100 text-indigo-700 border-indigo-200"
+                    : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700"
+                )}
+              >
+                {sub}
+              </Link>
+            ))}
+          </div>
         </div>
       )}
     </div>

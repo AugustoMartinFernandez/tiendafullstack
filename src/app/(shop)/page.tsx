@@ -1,67 +1,72 @@
+// src/app/(shop)/page.tsx
+
+import { getHomeConfig } from "@/lib/actions/settings";
 import { HeroSection } from "@/components/hero/hero-section";
 import { AboutSection } from "@/components/marketing/about-section";
 import { FaqSection } from "@/components/marketing/faq-section";
-import { getHomeConfig } from "@/lib/db";
 
-// Esta configuración le dice a Next.js:
-// "Guardá esta página en memoria y no la vuelvas a generar por 1 hora (3600 seg),
-// a menos que haya una venta o cambio manual".
-// ESTO ES LO QUE TE AHORRA COSTOS DE FIREBASE.
+// Esto hace que la página se actualice cada hora (o cuando hagas un cambio en admin)
 export const revalidate = 3600;
 
-export default async function Home() {
-  // 1. Leemos la configuración desde Firebase
-  // Si es la primera vez, crea la config por defecto automáticamente.
+export default async function ShopHomePage() {
+  // 1. LEER LOS DATOS DE FIREBASE
   const config = await getHomeConfig();
+
+  // 2. PREPARAR DATOS (Si no hay nada guardado, usa estos por defecto)
+  const hero = config?.hero || {
+    title: "Bienvenido a mi Tienda",
+    subtitle: "Los mejores productos están acá",
+    badgeText: "NUEVO",
+    buttonText: "Ver Productos",
+    buttonUrl: "/tienda",
+    imageUrl: "/placeholder.jpg",
+  };
+
+  const benefits = config?.benefits?.length ? config.benefits : [
+    { id: "1", title: "Envío Seguro", description: "Protegemos tu paquete", icon: "Truck" }
+  ];
+
+  // Mapeo de iconos a los valores esperados por AboutSection
+  const mapIcon = (icon?: string): "truck" | "shield" | "zap" => {
+    const name = (icon || "").toLowerCase();
+    if (name.includes("truck") || name.includes("envío") || name.includes("shipping")) return "truck";
+    if (name.includes("shield") || name.includes("seguro") || name.includes("security")) return "shield";
+    if (name.includes("zap") || name.includes("bolt") || name.includes("rápido") || name.includes("fast")) return "zap";
+    return "truck";
+  };
+
+  const faqs = config?.faqs?.length ? config.faqs : [];
 
   return (
     <main>
-      {/* 1. SECCIÓN HERO (Con datos reales de la DB) */}
+      {/* SECCIÓN HERO CONECTADA */}
       <HeroSection
-        badgeText={config.hero.badgeText}
-        title={config.hero.title}
-        subtitle={config.hero.subtitle}
-        buttonText={config.hero.buttonText}
-        buttonUrl={config.hero.buttonUrl}
-        imageUrl={config.hero.imageUrl}
+        badgeText={hero.badgeText}
+        title={hero.title}
+        subtitle={hero.subtitle}
+        buttonText={hero.buttonText}
+        buttonUrl={hero.buttonUrl}
+        imageUrl={hero.imageUrl}
       />
 
-      {/* 2. SECCIÓN BENEFICIOS (Por ahora fijos, luego los hacemos dinámicos) */}
+      {/* BENEFICIOS CONECTADOS */}
       <AboutSection
-        title="¿Por qué elegirnos?"
-        description="Nos enfocamos en la calidad y en brindarte la mejor experiencia."
-        features={[
-          {
-            title: "Envíos Seguros",
-            description: "Tu compra viaja protegida hasta tus manos.",
-            iconName: "truck",
-          },
-          {
-            title: "Garantía Total",
-            description: "Si no es lo que esperabas, lo solucionamos.",
-            iconName: "shield",
-          },
-          {
-            title: "Soporte Humano",
-            description: "Te atendemos por WhatsApp al instante.",
-            iconName: "zap",
-          },
-        ]}
+        title="Beneficios"
+        description="Lo que nos hace únicos"
+        features={benefits.map(b => ({
+          title: b.title,
+          description: b.description,
+          iconName: mapIcon(b.icon),
+        }))}
       />
 
-      {/* 3. SECCIÓN FAQ */}
+      {/* FAQ CONECTADAS */}
       <FaqSection
         title="Preguntas Frecuentes"
-        items={[
-          {
-            question: "¿Cómo compro?",
-            answer: "Agregá al carrito y completá tus datos. Coordinamos el pago por WhatsApp.",
-          },
-          {
-            question: "¿Medios de pago?",
-            answer: "Transferencia o Efectivo. Simple y directo.",
-          },
-        ]}
+        items={faqs.map(f => ({
+          question: f.question,
+          answer: f.answer
+        }))}
       />
     </main>
   );

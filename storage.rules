@@ -1,12 +1,49 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Regla para comprobantes de pago
+
+    // --- FUNCIONES DE SEGURIDAD ---
+    
+    // Verifica si el usuario es Admin mediante Custom Claims (seteados por set-admin.ts)
+    function isAdmin() {
+      return request.auth != null && request.auth.token.role == 'admin';
+    }
+
+    // Verifica si el usuario es dueño del recurso
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Valida que el archivo sea una imagen y pese menos de 5MB
+    function isValidImage() {
+      return request.resource.size < 5 * 1024 * 1024
+             && request.resource.contentType.matches('image/.*');
+    }
+
+    // --- REGLAS POR COLECCIÓN ---
+
+    // 1. PRODUCTOS (Tienda)
+    // Lectura pública para que la tienda funcione.
+    // Escritura restringida estrictamente a Admins.
+    match /products/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidImage();
+    }
+
+    // 2. USUARIOS (Avatares/Perfiles)
+    // Cada usuario tiene su carpeta aislada.
+    // Nadie puede ver ni tocar la carpeta de otro (Privacidad total).
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) && isValidImage();
+    }
+
+    // 3. COMPROBANTES DE PAGO (Receipts)
+    // Estructura jerárquica: receipts / userId / orderId / archivo
+    // Permite al admin auditar pagos.
     match /receipts/{userId}/{orderId}/{fileName} {
-      // Solo el dueño o el admin pueden leer
-      allow read: if request.auth != null && (request.auth.uid == userId || request.auth.token.role == 'admin');
-      // Solo el dueño puede subir, máx 5MB, solo imágenes o PDF
-      allow write: if request.auth != null && request.auth.uid == userId
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId)
                    && request.resource.size < 5 * 1024 * 1024
                    && (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
     }

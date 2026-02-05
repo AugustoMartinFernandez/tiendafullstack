@@ -8,6 +8,7 @@ import { submitReceipt } from "@/lib/actions/orders";
 import { Loader2, Upload, Check, AlertCircle, FileText, Send } from "lucide-react";
 import { Toast, ToastType } from "@/components/ui/toast";
 import { formatPrice } from "@/lib/format";
+import { StoragePaths } from "@/lib/storage-paths";
 
 interface Props {
   orderId: string;
@@ -45,7 +46,7 @@ export function ReceiptUploader({ orderId, userId, onSuccess }: Props) {
     try {
       // 1. Subir a Firebase Storage
       const timestamp = Date.now();
-      const storageRef = ref(storage, `receipts/${orderId}/${userId}_${timestamp}_${selectedFile.name}`);
+      const storageRef = ref(storage, StoragePaths.receipts(userId, orderId, `${timestamp}_${selectedFile.name}`));
       const uploadTask = uploadBytesResumable(storageRef, selectedFile);
 
       await uploadTask;

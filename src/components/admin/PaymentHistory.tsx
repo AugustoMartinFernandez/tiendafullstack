@@ -14,7 +14,8 @@ export function PaymentHistory({ order }: { order: Order }) {
         <History className="w-4 h-4" /> Historial de Movimientos
       </h4>
       
-      <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="hidden sm:block bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
         <table className="w-full text-sm text-left">
           <thead className="text-xs text-gray-500 font-bold uppercase bg-gray-100/50 border-b border-gray-200">
             <tr>
@@ -45,6 +46,32 @@ export function PaymentHistory({ order }: { order: Order }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="sm:hidden space-y-3">
+        {order.payments.map((pay) => (
+          <div key={pay.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col gap-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-bold text-gray-900">{new Date(pay.date).toLocaleDateString()}</p>
+                <p className="text-[10px] text-gray-500 font-medium">
+                  {new Date(pay.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • {pay.recordedBy.split('@')[0]}
+                </p>
+              </div>
+              <div className={`flex items-center gap-1 font-bold text-sm ${pay.amount >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {pay.amount >= 0 ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
+                {new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(Math.abs(pay.amount))}
+              </div>
+            </div>
+            
+            {pay.note && (
+              <div className="p-3 bg-white rounded-lg border border-gray-100 text-xs text-gray-600 italic">
+                {pay.note}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

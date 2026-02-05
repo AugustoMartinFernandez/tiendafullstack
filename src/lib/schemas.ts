@@ -28,12 +28,18 @@ export const productSchema = z.object({
 
 export const orderSchema = z.object({
   userId: z.string().nullable().optional(),
+  // 1. AGREGADO: Esto faltaba y es necesario para la idempotencia
+  clientOrderId: z.string().optional(),
   userInfo: z.object({
     name: z.string().min(2, "El nombre es obligatorio"),
     phone: z.string().min(6, "El teléfono es obligatorio"),
     address: z.string().min(5, "La dirección es obligatoria"),
     notes: z.string().optional(),
-    email: z.string().email("Email inválido").optional().or(z.literal("")),
+    // 2. CORREGIDO: Email obligatorio. 
+    // Para un checkout de invitado, el email es vital. 
+    // Si el usuario está logueado, el backend usará su email de sesión, 
+    // pero si mandamos userInfo, el email debe ser válido.
+    email: z.string().email("El email es obligatorio y debe ser válido"),
   }),
   items: z.array(z.object({
     id: z.string(),

@@ -9,7 +9,7 @@ import { CartItem } from "@/lib/types";
 export function useCartSync(
   items: CartItem[],
   setItems: Dispatch<SetStateAction<CartItem[]>>,
-  isLoaded: boolean
+  isLoaded: boolean,
 ) {
   const { user, loading: authLoading } = useAuth();
   const prevUserRef = useRef<string | null>(null);
@@ -27,7 +27,7 @@ export function useCartSync(
         try {
           const remoteCart = await getUserCart(currentUserId);
           const localCart = items; // Usamos el estado actual del closure
-          
+
           if (remoteCart.length > 0 || localCart.length > 0) {
             const mergedCart = mergeCarts(localCart, remoteCart);
             setItems(mergedCart);
@@ -58,7 +58,7 @@ export function useCartSync(
         console.error("Error saving cart to Firestore:", error);
       }
     },
-    1500
+    1500,
   );
 
   useEffect(() => {

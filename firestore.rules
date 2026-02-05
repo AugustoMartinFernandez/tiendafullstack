@@ -2,69 +2,109 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---------------------------------------------------------
-    // HELPER: VERIFICAR ADMIN
-    // ---------------------------------------------------------
-    // CORRECCIÓN CRÍTICA: Usamos 'role' para coincidir con tu script set-admin.ts
+    // --- FUNCIONES DE SEGURIDAD REUTILIZABLES ---
+
+    // Verifica si el usuario está autenticado
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Verifica si el usuario es dueño del recurso (por UID)
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Verifica si es Admin mediante Custom Claims (Seteados por Server Actions)
     function isAdmin() {
-      return request.auth != null && request.auth.token.role == 'admin';
+      return isSignedIn() && request.auth.token.role == "admin";
     }
 
-    // ---------------------------------------------------------
-    // COLECCIÓN: PRODUCTS
-    // ---------------------------------------------------------
+    // --- 1. PRODUCTOS (Catálogo Público) ---
     match /products/{productId} {
-      // ✅ LECTURA PÚBLICA: Todo el mundo puede ver los productos
-      allow read: if true;
+      // Público: Solo si está marcado como visible.
+      // Admin: Puede ver todo (incluso ocultos).
+      allow read: if (resource.data.isVisible == true) || isAdmin();
       
-      // ✅ ESCRITURA ADMIN: Solo los administradores pueden crear/editar/borrar
-      // Esto permite que el Admin SDK (Server Actions) funcione y también
-      // te permite editar manualmente desde la consola de Firebase si lo necesitas.
-      allow write: if isAdmin();
+      // Escritura: BLOQUEADA para el cliente.
+      // La gestión de productos se hace exclusivamente vía Server Actions (Admin SDK).
+      allow write: if false;
     }
 
-    // ---------------------------------------------------------
-    // COLECCIÓN: ORDERS (Pedidos)
-    // ---------------------------------------------------------
+    // --- 2. PEDIDOS (Datos Críticos) ---
     match /orders/{orderId} {
-      // CREATE: Permitido a cualquier usuario (validando campos básicos)
-      allow create: if request.resource.data.keys().hasAll(['total', 'items', 'date']) &&
-                       request.resource.data.total is number &&
-                       request.resource.data.total > 0;
+      // Lectura:
+      // - Admin: Acceso total.
+      // - Usuario: Solo sus propios pedidos.
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       
-      // UPDATE/DELETE: Bloqueado en cliente. Solo se modifica vía Server Actions.
-      allow update, delete: if false;
+      // Escritura: BLOQUEADA TOTALMENTE.
+      // La creación y actualización de estados/pagos es lógica financiera crítica
+      // que solo debe ocurrir en el servidor (src/lib/actions/orders.ts).
+      allow write: if false;
 
-      // READ: Solo el Admin o el Dueño del pedido pueden verlo
-      allow read: if isAdmin() || (request.auth != null && resource.data.userId == request.auth.uid);
+      // Subcolección: Eventos de Auditoría (Paso 3)
+      match /events/{eventId} {
+        allow read: if isAdmin() || (
+          // El usuario debe ser dueño del pedido padre
+          isSignedIn() && 
+          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
+          // Y el evento no debe ser interno del sistema
+          resource.data.type != "ADMIN_INTERNAL"
+        );
+        allow write: if false;
+      }
     }
 
-    // ---------------------------------------------------------
-    // COLECCIÓN: USERS (Perfiles)
-    // ---------------------------------------------------------
+    // --- 3. NOTIFICACIONES (Privadas) ---
+    match /notifications/{notificationId} {
+      // ✅ REGLA CORREGIDA:
+      // Permitimos LEER, ACTUALIZAR (marcar leída) y BORRAR si el usuario es el dueño.
+      // Usamos 'resource.data.userId' para asegurar que solo toque SUS documentos.
+      allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // CREAR: Bloqueado para el cliente. 
+      // Las notificaciones las crea el sistema (Backend/Server Actions).
+      allow create: if false;
+    }
+
+    // --- 4. USUARIOS (Perfil y Preferencias) ---
     match /users/{userId} {
-      // Cada usuario solo puede leer y escribir su propio perfil
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Lectura: Permitida si es el dueño o admin.
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Escritura: BLOQUEADA. Toda modificación debe ser vía Server Actions (Admin SDK).
+      allow write: if false;
 
-      // Subcolección de Carrito: solo el dueño puede leer y escribir
-      match /cart/{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Subcolección: CARRITO (Excepción necesaria para UX)
+      // Permitimos al cliente gestionar su carrito y favoritos directamente
+      // para evitar latencia de red excesiva en interacciones UI frecuentes.
+      match /cart/{itemId} {
+        allow read, write: if isOwner(userId) || isAdmin();
       }
-
-      // Subcolección de Favoritos: solo el dueño puede leer y escribir
-      match /favorites/{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Subcolección: FAVORITOS
+      match /favorites/{itemId} {
+        allow read, write: if isOwner(userId) || isAdmin();
       }
     }
 
-    // ---------------------------------------------------------
-    // COLECCIÓN: SETTINGS (Configuración Global)
-    // ---------------------------------------------------------
+    // --- 5. AUDITORÍA DEL SISTEMA (Solo Admin) ---
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Los logs son inmutables y generados por el servidor.
+    }
+
+    // --- 6. CONFIGURACIÓN (Settings) ---
     match /settings/{docId} {
-      // Configuración pública (categorías, tags, home)
+      // Necesario para que el frontend lea la configuración del Home y Categorías.
       allow read: if true;
-      // Solo modificable por Admin SDK
-      allow write: if false; 
+      allow write: if false; // Solo Admin modifica la configuración.
+    }
+    
+    // --- REGLA POR DEFECTO: BLOQUEO TOTAL ---
+    // Cualquier colección no definida arriba será inaccesible.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

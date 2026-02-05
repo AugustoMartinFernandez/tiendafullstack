@@ -1,4 +1,4 @@
-import { getAdminAuth } from "@/lib/firebase-admin";
+import { authAdmin } from "@/lib/firebase-admin";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -15,18 +15,16 @@ export async function POST(request: Request) {
     const expiresIn = (remember ? 14 : 5) * 24 * 60 * 60 * 1000;
 
     // 2. Verificar el token y crear la cookie de sesión
-    const adminAuth = getAdminAuth();
-    
     // Verificamos el token primero para asegurar que es válido
-    await adminAuth.verifyIdToken(idToken, true);
+    await authAdmin.verifyIdToken(idToken, true);
     
     // Creamos la cookie de sesión
-    const sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn });
+    const sessionCookie = await authAdmin.createSessionCookie(idToken, { expiresIn });
 
     // 3. Establecer la cookie en el navegador
     const cookieStore = await cookies();
     
-    cookieStore.set("__session", sessionCookie, {
+    cookieStore.set("session", sessionCookie, {
       maxAge: expiresIn / 1000, // maxAge en segundos para la cookie
       httpOnly: true, // No accesible por JS del cliente (Seguridad XSS)
       secure: process.env.NODE_ENV === "production", // Solo HTTPS en prod

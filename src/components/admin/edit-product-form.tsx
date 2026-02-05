@@ -6,7 +6,7 @@ import { getCategories, getTags, revalidateStore } from "@/lib/actions/settings"
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Product } from "@/lib/types";
-import { Plus, Trash2, Save, ArrowLeft, UploadCloud, X, Box, Tag, FileText, Check, Crop as CropIcon, Printer } from "lucide-react";
+import { Plus, Trash2, Save, ArrowLeft, UploadCloud, X, Box, Tag, FileText, Check, Crop as CropIcon, Printer, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -167,13 +167,20 @@ const SUB_CATEGORY_SUGGESTIONS: Record<string, string[]> = {
   "Herramientas": ["Manuales", "Eléctricas", "Jardinería"],
 };
 
+interface PendingUpload {
+  id: string;
+  file: Blob;
+  previewUrl: string;
+  progress: number;
+  status: 'pending' | 'uploading' | 'error';
+}
+
 export function EditProductForm({ product }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [description, setDescription] = useState(product.description || "");
+  const [isDragging, setIsDragging] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [availableCategories, setAvailableCategories] = useState<string[]>([...PRODUCT_CATEGORIES]);
   const [category, setCategory] = useState(product.category);
   const [isCustomCategory, setIsCustomCategory] = useState(false); // Se recalcula en useEffect
@@ -193,6 +200,7 @@ export function EditProductForm({ product }: Props) {
   const [sku, setSku] = useState(product.sku || "");
   const [originalPrice, setOriginalPrice] = useState(product.originalPrice?.toString() || "");
   const [showDiscount, setShowDiscount] = useState(!!product.originalPrice && product.originalPrice > 0);
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   
   // Cargar categorías y determinar si la actual es custom
   useEffect(() => {
@@ -414,44 +422,126 @@ export function EditProductForm({ product }: Props) {
     e.target.value = "";
   };
 
-  const handleCropAndUpload = async () => {
-    if (!cropImage || !croppedAreaPixels) return;
+  // --- DRAG AND DROP PARA SUBIDA ---
+  const handleDragEnterUpload = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
 
-    setUploading(true);
-    setLoading(true);
-    setUploadProgress(0);
-    
+  const handleDragLeaveUpload = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  // --- PROCESADOR DE SUBIDA INDIVIDUAL ---
+  const processPendingUpload = async (item: PendingUpload) => {
     try {
-      // 1. Obtenemos el recorte
-      const croppedBlob = await getCroppedImg(cropImage, croppedAreaPixels);
+      setPendingUploads(prev => prev.map(p => p.id === item.id ? { ...p, status: 'uploading' } : p));
       
-      // 2. Comprimimos el recorte
-      const compressedBlob = await compressImage(croppedBlob, useWatermark, watermarkText, watermarkColor);
-
-      showToast("Comprimiendo y aplicando marca de agua...", "success");
-      // 3. Subimos a Firebase
-      const storageRef = ref(storage, `products/${category}/${Date.now()}_cropped.jpg`);
-      
+      const compressedBlob = await compressImage(item.file, useWatermark, watermarkText, watermarkColor);
+      const storageRef = ref(storage, `products/${category || 'general'}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`);
       const uploadTask = uploadBytesResumable(storageRef, compressedBlob);
 
       uploadTask.on("state_changed", (snapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
+        setPendingUploads(prev => prev.map(p => p.id === item.id ? { ...p, progress } : p));
       });
 
       await uploadTask;
       const url = await getDownloadURL(storageRef);
-      setImages((prev) => [...prev, url]);
-      
-      // Cerramos el modal de crop
-      setCropImage(null);
-      showToast("Imagen procesada y subida correctamente.", "success");
+
+      setImages(prev => [...prev, url]);
+      setPendingUploads(prev => prev.filter(p => p.id !== item.id));
+      URL.revokeObjectURL(item.previewUrl);
     } catch (error) {
-      showToast("Error crítico al subir imagen.", "error");
-    } finally {
-      setUploading(false);
-      setLoading(false);
-      setUploadProgress(0);
+      console.error(error);
+      setPendingUploads(prev => prev.map(p => p.id === item.id ? { ...p, status: 'error' } : p));
+      showToast("Error al subir imagen.", "error");
+    }
+  };
+
+  const handleUploadDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const rawFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    if (rawFiles.length === 0) return;
+
+    // Validar duplicados en el lote (Nombre + Tamaño + Fecha)
+    const files = rawFiles.filter((file, index, self) =>
+      index === self.findIndex((f) => (
+        f.name === file.name && f.size === file.size && f.lastModified === file.lastModified
+      ))
+    );
+
+    if (files.length < rawFiles.length) {
+      showToast(`Se ignoraron ${rawFiles.length - files.length} imágenes duplicadas.`, "error");
+    }
+
+    if (files.length === 0) return;
+
+    // CASO 1: Un solo archivo -> Flujo de recorte manual (Mayor precisión)
+    if (files.length === 1) {
+      const file = files[0];
+      if (file.size > 5 * 1024 * 1024) return showToast("La imagen supera los 5MB.", "error");
+      
+      const reader = new FileReader();
+      reader.onload = () => setCropImage(reader.result as string);
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // CASO 2: Múltiples archivos -> Carga masiva automática (Skip crop, auto-resize)
+    const newPendingItems: PendingUpload[] = files.map(file => ({
+      id: Math.random().toString(36).substr(2, 9),
+      file,
+      previewUrl: URL.createObjectURL(file),
+      progress: 0,
+      status: 'pending'
+    }));
+
+    if (images.length + pendingUploads.length + newPendingItems.length > 5) {
+        showToast("Límite de 5 imágenes excedido.", "error");
+        return;
+    }
+
+    setPendingUploads(prev => [...prev, ...newPendingItems]);
+    
+    // Disparar subidas en paralelo
+    newPendingItems.forEach(processPendingUpload);
+  };
+
+  const handleCropAndUpload = async () => {
+    if (!cropImage || !croppedAreaPixels) return;
+
+    try {
+      // 1. Obtenemos el recorte
+      const croppedBlob = await getCroppedImg(cropImage, croppedAreaPixels);
+      
+      const newItem: PendingUpload = {
+          id: Math.random().toString(36).substr(2, 9),
+          file: croppedBlob,
+          previewUrl: URL.createObjectURL(croppedBlob),
+          progress: 0,
+          status: 'pending'
+      };
+
+      if (images.length + pendingUploads.length >= 5) {
+          showToast("Límite de 5 imágenes alcanzado.", "error");
+          return;
+      }
+
+      setPendingUploads(prev => [...prev, newItem]);
+      setCropImage(null); // Cerramos modal inmediatamente
+      
+      // Iniciamos subida en segundo plano
+      processPendingUpload(newItem);
+
+    } catch (error) {
+      showToast("Error al procesar recorte.", "error");
     }
   };
 
@@ -495,6 +585,10 @@ export function EditProductForm({ product }: Props) {
       return showToast("El precio original debe ser mayor al precio de venta.", "error");
     }
 
+    if (pendingUploads.length > 0) {
+      return showToast("Por favor esperá a que terminen de subirse las imágenes.", "error");
+    }
+
     setLoading(true);
     
     // Inyectamos el ID y la Galería al FormData
@@ -522,6 +616,13 @@ export function EditProductForm({ product }: Props) {
       setLoading(false);
     }
   };
+
+  // --- CÁLCULO DE ESTADO DE SUBIDA (FIX PARA ERRORES DE UI) ---
+  const uploading = pendingUploads.length > 0;
+  
+  const uploadProgress = uploading
+    ? pendingUploads.reduce((acc, curr) => acc + curr.progress, 0) / pendingUploads.length
+    : 0;
 
   return (
     <>
@@ -764,9 +865,13 @@ export function EditProductForm({ product }: Props) {
             ))}
             
             {images.length < 5 && (
-              <label className={cn(
+              <label 
+                onDragOver={handleDragEnterUpload}
+                onDragLeave={handleDragLeaveUpload}
+                onDrop={handleUploadDrop}
+                className={cn(
                 "flex aspect-square cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed transition-all group relative overflow-hidden",
-                uploading ? "border-indigo-500 bg-indigo-50 cursor-wait" : "border-gray-200 bg-gray-50/50 hover:bg-white hover:border-indigo-500"
+                uploading ? "border-indigo-500 bg-indigo-50 cursor-wait" : isDragging ? "border-indigo-500 bg-indigo-50 scale-105 shadow-xl" : "border-gray-200 bg-gray-50/50 hover:bg-white hover:border-indigo-500"
               )}>
                 {uploading ? (
                   <div className="w-full px-4 flex flex-col items-center animate-in fade-in zoom-in">
@@ -780,7 +885,7 @@ export function EditProductForm({ product }: Props) {
                     <div className="p-3 rounded-full bg-white shadow-sm group-hover:scale-110 transition-transform">
                       <UploadCloud className="h-6 w-6 text-gray-400 group-hover:text-indigo-500" />
                     </div>
-                    <span className="mt-3 text-[9px] font-black text-gray-400 uppercase group-hover:text-indigo-500">Añadir</span>
+                    <span className="mt-3 text-[9px] font-black text-gray-400 uppercase group-hover:text-indigo-500 text-center px-2">{isDragging ? "Soltar aquí" : "Click o Arrastrar"}</span>
                     <input type="file" className="hidden" onChange={handleFileSelect} accept="image/*" disabled={uploading} />
                   </>
                 )}

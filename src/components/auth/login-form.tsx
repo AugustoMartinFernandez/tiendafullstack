@@ -3,9 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { signInAndCreateSession, signInWithGoogleAndCreateSession } from "@/lib/auth-client";
+import { auth } from "@/lib/firebase";
 import { Loader2, LogIn } from "lucide-react";
 import { Toast, ToastType } from "@/components/ui/toast";
+import { ForgotPasswordModal } from "@/components/auth/forgot-password-modal";
+import ReCAPTCHA from "react-google-recaptcha";
+import { verifyRecaptcha } from "@/lib/actions/recaptcha";
 
 interface LoginFormProps {
   redirectTo: string;
@@ -19,11 +24,13 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
   const [toast, setToast] = useState<{ show: boolean; msg: string; type: ToastType }>({
     show: false,
     msg: "",
     type: "error",
   });
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
 
   const showToast = (msg: string, type: ToastType) => {
     setToast({ show: true, msg, type });
@@ -32,18 +39,78 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try {
-      const result = await signInAndCreateSession(email, password, remember);
-      if (result.success) {
-        showToast(`¡Bienvenido! Redirigiendo...`, "success");
-        router.push(isAdmin ? redirectTo : "/");
-        router.refresh(); // Actualiza componentes de servidor para leer la nueva cookie
-      } else {
-        showToast(result.message || "Error al iniciar sesión", "error");
+
+    // VALIDACIÓN DE reCAPTCHA (solo para admin)
+    if (isAdmin) {
+      if (!recaptchaToken) {
+        showToast("Por favor completa el reCAPTCHA", "error");
         setLoading(false);
+        return;
       }
-    } catch (error) {
-      showToast("Ocurrió un error inesperado", "error");
+
+      try {
+        const validation = await verifyRecaptcha(recaptchaToken);
+        if (!validation.success) {
+          showToast(validation.message, "error");
+          setRecaptchaToken(null);
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.error("Error verificando reCAPTCHA:", error);
+        showToast("Error al verificar reCAPTCHA", "error");
+        setLoading(false);
+        return;
+      }
+    }
+
+    // LÓGICA DE INICIO DE SESIÓN
+    try {
+      // 1. AUTENTICACIÓN EN FIREBASE CLIENT
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // 2. CREAR SESIÓN EN EL SERVIDOR (handshake)
+      if (isAdmin) {
+        try {
+          const idToken = await user.getIdToken();
+
+          const sessionResponse = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ idToken, remember }), // Pasar remember flag
+          });
+
+          if (!sessionResponse.ok) {
+            const errorData = await sessionResponse.json();
+            throw new Error(errorData.message || "Error al crear la sesión en el servidor");
+          }
+        } catch (sessionError) {
+          console.error("Error creando sesión:", sessionError);
+          showToast("Error al establecer la sesión. Por favor intenta nuevamente.", "error");
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 3. SINCRONIZAR ESTADO DEL SERVIDOR
+      router.refresh();
+
+      // 4. MOSTRAR ÉXITO Y REDIRIGIR
+      showToast("Inicio de sesión exitoso", "success");
+      router.push(redirectTo);
+    } catch (error: any) {
+      console.error("Error de login:", error);
+      const errorMessage =
+        error.code === "auth/user-not-found" ? "Usuario no encontrado" :
+        error.code === "auth/wrong-password" ? "Contraseña incorrecta" :
+        error.code === "auth/invalid-email" ? "Email inválido" :
+        error.code === "auth/too-many-requests" ? "Demasiados intentos. Intenta más tarde." :
+        error.message || "Error al iniciar sesión";
+      showToast(errorMessage, "error");
+    } finally {
       setLoading(false);
     }
   };
@@ -53,21 +120,54 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
     try {
       const result = await signInWithGoogleAndCreateSession(remember);
       if (result.success) {
+        // Si es admin, crear sesión en el servidor
+        if (isAdmin) {
+          try {
+            const user = auth.currentUser;
+            if (!user) throw new Error("Usuario no autenticado");
+
+            const idToken = await user.getIdToken();
+
+            const sessionResponse = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ idToken, remember }), // Pasar remember flag
+            });
+
+            if (!sessionResponse.ok) {
+              const errorData = await sessionResponse.json();
+              throw new Error(errorData.message || "Error al crear la sesión");
+            }
+          } catch (sessionError) {
+            console.error("Error creando sesión admin:", sessionError);
+            showToast("Error al establecer la sesión. Por favor intenta nuevamente.", "error");
+            setLoading(false);
+            return;
+          }
+        }
+
         showToast(`¡Bienvenido! Redirigiendo...`, "success");
-        router.push(isAdmin ? redirectTo : "/");
         router.refresh();
+        router.push(redirectTo);
       } else {
         showToast(result.message || "Error con Google", "error");
         setLoading(false);
       }
     } catch (error) {
+      console.error("Error en Google login:", error);
       showToast("Error inesperado con Google", "error");
       setLoading(false);
     }
   };
 
+  const handleRecaptchaChange = (token: string | null) => {
+    setRecaptchaToken(token);
+  };
+
   return (
-    <div className="w-full max-w-md mx-auto bg-white p-8 rounded-[2rem] shadow-2xl shadow-gray-200/50 border border-gray-100">
+    <div className="w-full max-w-md mx-auto bg-white p-8 rounded-4xl shadow-2xl shadow-gray-200/50 border border-gray-100">
       <Toast
         isVisible={toast.show}
         message={toast.msg}
@@ -75,6 +175,8 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
         onClose={() => setToast({ ...toast, show: false })}
       />
       
+      <ForgotPasswordModal isOpen={isForgotModalOpen} onClose={() => setIsForgotModalOpen(false)} />
+
       <div className="text-center mb-8">
         <h2 className="text-2xl font-black text-gray-900 tracking-tight">{title}</h2>
         <p className="text-sm font-medium text-gray-400 mt-2">Ingresá a tu cuenta para continuar</p>
@@ -85,6 +187,7 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
           <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-2">Email</label>
           <input
             type="email"
+            autoComplete="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -97,6 +200,7 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
           <label className="block text-xs font-black uppercase text-gray-400 tracking-widest mb-2">Contraseña</label>
           <input
             type="password"
+            autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -105,22 +209,42 @@ export function LoginForm({ redirectTo, title = "Iniciar Sesión", isAdmin = fal
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="remember"
-            checked={remember}
-            onChange={(e) => setRemember(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-          />
-          <label htmlFor="remember" className="text-sm font-bold text-gray-600 cursor-pointer select-none">
-            Recordarme por 14 días
-          </label>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="remember"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+            />
+            <label htmlFor="remember" className="text-sm font-bold text-gray-600 cursor-pointer select-none">
+              Recordarme
+            </label>
+          </div>
+          
+          <button
+            type="button"
+            onClick={() => setIsForgotModalOpen(true)}
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
         </div>
+
+        {/* reCAPTCHA v2 - Solo para admin */}
+        {isAdmin && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg flex justify-center border border-gray-200">
+            <ReCAPTCHA
+              sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
+              onChange={handleRecaptchaChange}
+            />
+          </div>
+        )}
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || (isAdmin && !recaptchaToken)}
           className="w-full h-14 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed shadow-xl shadow-indigo-200"
         >
           {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogIn className="h-5 w-5" />}

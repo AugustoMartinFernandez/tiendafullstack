@@ -41,7 +41,7 @@ export function Hero({
             alt="Banner"
             className="absolute inset-0 -z-10 h-full w-full object-cover opacity-40"
         />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-gray-900 via-gray-900/40" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent" />
         
         {/* Contenido */}
         <div className="mx-auto max-w-7xl px-6 py-32 sm:py-40 lg:px-8">
@@ -62,7 +62,7 @@ export function Hero({
                 <div className="mt-10 flex items-center justify-center gap-x-6 animate-in fade-in slide-in-from-bottom-10 duration-700 delay-300">
                     <Link
                         href={buttonUrl}
-                        className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-lg hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 flex items-center gap-2 transition-all hover:scale-105"
+                        className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-lg hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 flex items-center gap-2 transition-all hover:scale-105"
                     >
                         {buttonText} <ArrowRight className="h-4 w-4" />
                     </Link>

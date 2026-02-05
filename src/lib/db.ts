@@ -1,18 +1,6 @@
-import { db } from "./firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-
-// Definimos qué datos tiene tu Home
-export interface HomeConfig {
-  hero: {
-    title: string;
-    subtitle: string;
-    badgeText: string;
-    buttonText: string;
-    buttonUrl: string;
-    imageUrl: string;
-  };
-  // Acá agregaremos más secciones después (FAQ, Nosotros, etc.)
-}
+import { getAdminDb } from "@/lib/firebase-admin";
+import { unstable_cache } from "next/cache";
+import { HomeConfig } from "@/lib/actions/settings";
 
 // Configuración por defecto (por si la base de datos está vacía)
 const DEFAULT_CONFIG: HomeConfig = {
@@ -27,20 +15,28 @@ const DEFAULT_CONFIG: HomeConfig = {
 };
 
 // Función para obtener la configuración
-export async function getHomeConfig(): Promise<HomeConfig> {
+export async function fetchHomeConfig(): Promise<HomeConfig | null> {
   try {
-    const docRef = doc(db, "settings", "home_config"); // Colección: settings, Documento: home_config
-    const docSnap = await getDoc(docRef);
+    const dbAdmin = getAdminDb();
+    const docRef = dbAdmin.collection("settings").doc("home_config");
+    const docSnap = await docRef.get();
 
-    if (docSnap.exists()) {
+    // CORRECCIÓN: .exists es una propiedad, no una función
+    if (docSnap.exists) {
       return docSnap.data() as HomeConfig;
     } else {
-      // Si no existe, creamos la configuración por defecto automáticamente
-      await setDoc(docRef, DEFAULT_CONFIG);
-      return DEFAULT_CONFIG;
+      return null;
     }
   } catch (error) {
-    console.error("Error leyendo configuración:", error);
-    return DEFAULT_CONFIG;
+    console.error("Error fetching home config:", error);
+    return null;
   }
 }
+
+// --- CACHING LAYER ---
+// Envolvemos la llamada a DB con unstable_cache para deduplicar y cachear entre requests.
+export const getHomeConfig = unstable_cache(
+  fetchHomeConfig,
+  ["home-config"], // Key única para el cache
+  { tags: ["home-config"] } // Tag para revalidación bajo demanda
+);
